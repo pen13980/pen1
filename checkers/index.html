@@ -1,0 +1,625 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<title>星盤跳棋</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=LXGW+WenKai+TC:wght@400;700&display=swap">
+<style>
+/* Layout: one-screen app — name + status, setting pills, a six-point wooden star that fills the free space, turn chips and a thumb-reach control bar. */
+:root {
+  --bg: #e9e4da;
+  --surface: #f6f2ea;
+  --ink: #2a241c;
+  --muted: #7a6d5c;
+  --line: #cfc5b4;
+  --accent: #a3361f;
+  --wood-a: #e2b874;
+  --wood-b: #c9944c;
+  --hole: #6b4a22;
+  --font-display: "LXGW WenKai TC", "Kaiti TC", "STKaiti", "BiauKai", serif;
+  --font-body: -apple-system, BlinkMacSystemFont, "PingFang TC", "Noto Sans TC", "Microsoft JhengHei", sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #1b1814; --surface: #26221c; --ink: #efe7da; --muted: #a59784;
+    --line: #3d362c; --accent: #e0644a; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #1b1814; --surface: #26221c; --ink: #efe7da; --muted: #a59784;
+  --line: #3d362c; --accent: #e0644a; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html, body { height: 100%; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-body);
+  font-size: 15px;
+  -webkit-tap-highlight-color: transparent;
+  overscroll-behavior: none;
+}
+.app {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-width: 640px;
+  margin: 0 auto;
+  padding-block: 12px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+h1 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 26px;
+  letter-spacing: 0.06em;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+}
+.seal {
+  display: inline-grid;
+  place-items: center;
+  width: 28px; height: 28px;
+  border: 2px solid var(--accent);
+  border-radius: 4px;
+  color: var(--accent);
+  font-size: 16px;
+  line-height: 1;
+  transform: rotate(-4deg);
+}
+.status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-display);
+  font-size: 18px;
+  min-width: 0;
+  text-align: right;
+}
+.dot {
+  width: 16px; height: 16px; border-radius: 50%;
+  flex: none;
+  box-shadow: inset -2px -3px 4px rgba(0,0,0,.35), 0 1px 2px rgba(0,0,0,.3);
+}
+.status .win { color: var(--accent); font-weight: 700; }
+
+.modes { display: flex; gap: 8px; flex-wrap: wrap; }
+.seg {
+  display: inline-flex;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface);
+  padding: 3px;
+}
+.seg button {
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 14px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  cursor: pointer;
+}
+.seg button[aria-pressed="true"] { background: var(--ink); color: var(--bg); }
+
+.board-wrap {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: grid;
+  place-items: center;
+}
+canvas { display: block; touch-action: none; max-width: 100%; }
+
+.turns {
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  color: var(--muted);
+  font-size: 13px;
+}
+.turns span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 8px 2px 4px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+}
+.turns span.now { border-color: var(--line); background: var(--surface); color: var(--ink); }
+.turns .dot { width: 12px; height: 12px; }
+.hint { text-align: center; color: var(--muted); font-size: 13px; min-height: 1.3em; margin: 0; }
+.controls { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
+.controls button {
+  font: inherit;
+  font-family: var(--font-display);
+  font-size: 17px;
+  padding: 12px 8px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--ink);
+  cursor: pointer;
+}
+.controls button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.controls button:disabled { opacity: .4; cursor: default; }
+button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <h1><span class="seal">躍</span>跳棋</h1>
+    <div class="status" id="status" aria-live="polite"></div>
+  </header>
+
+  <div class="modes">
+    <div class="seg" role="group" aria-label="對手">
+      <button id="mode-ai" data-mode="ai" aria-pressed="true">對電腦</button>
+      <button id="mode-pvp" data-mode="pvp" aria-pressed="false">多人同機</button>
+    </div>
+    <div class="seg" role="group" aria-label="人數">
+      <button id="n-2" data-n="2" aria-pressed="true">2 人</button>
+      <button id="n-3" data-n="3" aria-pressed="false">3 人</button>
+      <button id="n-4" data-n="4" aria-pressed="false">4 人</button>
+      <button id="n-6" data-n="6" aria-pressed="false">6 人</button>
+    </div>
+  </div>
+
+  <div class="board-wrap" id="wrap">
+    <canvas id="board" aria-label="中國跳棋星形棋盤"></canvas>
+  </div>
+
+  <div class="turns" id="turns"></div>
+  <p class="hint" id="hint"></p>
+
+  <div class="controls">
+    <button id="undo">悔棋</button>
+    <button id="restart" class="primary">新局</button>
+  </div>
+</div>
+
+<script>
+(() => {
+  // ---------- board geometry (cube coords x+y+z=0; axial q=x, r=z) ----------
+  const DIRS = [[1,0],[1,-1],[0,-1],[-1,0],[-1,1],[0,1]];
+  const ARM_SETS = {2: [0,3], 3: [0,2,4], 4: [0,1,3,4], 6: [0,1,2,3,4,5]};
+  // arm 0 = bottom, then clockwise on screen
+  const ARM_COLORS = ['#d23a2c', '#8a4fc7', '#2e9a52', '#2d6fd6', '#e3b21c', '#2b2b2b'];
+  const ARM_NAMES = ['紅', '紫', '綠', '藍', '黃', '黑'];
+  const TIPS = [[-4,8],[-8,4],[-4,-4],[4,-8],[8,-4],[4,4]]; // [q,r] of each arm's far point
+
+  const cells = [];       // {q, r, arm}
+  const index = new Map();
+  for (let q = -8; q <= 8; q++) for (let r = -8; r <= 8; r++) {
+    const x = q, z = r, y = -q - r;
+    const a = x <= 4 && y <= 4 && z <= 4, b = x >= -4 && y >= -4 && z >= -4;
+    if (!(a || b)) continue;
+    const arm = z > 4 ? 0 : x < -4 ? 1 : y > 4 ? 2 : z < -4 ? 3 : x > 4 ? 4 : y < -4 ? 5 : -1;
+    index.set(q + ',' + r, cells.length);
+    cells.push({ q, r, arm });
+  }
+  const C = cells.length; // 121
+  const nb = cells.map(c => DIRS.map(([dq, dr]) => index.get((c.q + dq) + ',' + (c.r + dr)) ?? -1));
+  const armCells = [0,1,2,3,4,5].map(a => cells.map((c, i) => c.arm === a ? i : -1).filter(i => i >= 0));
+  const tipIdx = TIPS.map(([q, r]) => index.get(q + ',' + r));
+  const dist = (i, j) => {
+    const a = cells[i], b = cells[j];
+    const dq = a.q - b.q, dr = a.r - b.r;
+    return (Math.abs(dq) + Math.abs(dr) + Math.abs(dq + dr)) / 2;
+  };
+
+  // ---------- state ----------
+  const canvas = document.getElementById('board');
+  const ctx = canvas.getContext('2d');
+  const wrap = document.getElementById('wrap');
+  const statusEl = document.getElementById('status');
+  const hintEl = document.getElementById('hint');
+  const turnsEl = document.getElementById('turns');
+  const undoBtn = document.getElementById('undo');
+  const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  let S;                 // persistent game state
+  let selected = -1;     // selected cell index
+  let options = null;    // Map dest -> path
+  let anim = null;       // {path, slot, start}
+  let aiTimer = null;
+  let scale = 0, W = 0, H = 0;
+
+  function freshState(prev) {
+    const n = prev?.n ?? 2, mode = prev?.mode ?? 'ai';
+    const arms = ARM_SETS[n];
+    const occ = Array(C).fill(-1);
+    arms.forEach((a, slot) => armCells[a].forEach(i => occ[i] = slot));
+    return { n, mode, arms, occ, turn: 0, winner: -1, history: [], last: null };
+  }
+  const isAI = slot => S.mode === 'ai' && slot !== 0;
+  const target = slot => (S.arms[slot] + 3) % 6;
+  const colorOf = slot => ARM_COLORS[S.arms[slot]];
+  const nameOf = slot => S.mode === 'ai' ? (slot === 0 ? '你' : `電腦（${ARM_NAMES[S.arms[slot]]}）`) : `${ARM_NAMES[S.arms[slot]]}方`;
+
+  function save() { try { localStorage.setItem('checkers-state', JSON.stringify(S)); } catch (e) {} }
+  function load() {
+    try {
+      const s = JSON.parse(localStorage.getItem('checkers-state') || 'null');
+      if (s && Array.isArray(s.occ) && s.occ.length === C && ARM_SETS[s.n]) return s;
+    } catch (e) {}
+    return null;
+  }
+
+  // ---------- rules ----------
+  function movesFrom(occ, from) {
+    const out = new Map();
+    const own = occ[from];
+    occ[from] = -1;
+    for (let d = 0; d < 6; d++) {
+      const j = nb[from][d];
+      if (j >= 0 && occ[j] === -1) out.set(j, [from, j]);
+    }
+    // chained jumps over any single adjacent marble
+    const seen = new Set([from]);
+    const queue = [[from]];
+    while (queue.length) {
+      const path = queue.shift();
+      const cur = path[path.length - 1];
+      for (let d = 0; d < 6; d++) {
+        const m = nb[cur][d];
+        if (m < 0 || occ[m] === -1) continue;
+        const j = nb[m][d];
+        if (j < 0 || occ[j] !== -1 || seen.has(j)) continue;
+        seen.add(j);
+        const p = path.concat(j);
+        if (!out.has(j)) out.set(j, p);
+        queue.push(p);
+      }
+    }
+    occ[from] = own;
+    return out;
+  }
+
+  const hasWon = (occ, slot) => armCells[target(slot)].every(i => occ[i] === slot);
+
+  // ---------- AI: greedy on "how far from home are my marbles" ----------
+  function evaluate(occ, slot) {
+    const t = target(slot), tip = tipIdx[t];
+    const empties = armCells[t].filter(i => occ[i] === -1);
+    let e = 0;
+    for (let i = 0; i < C; i++) {
+      if (occ[i] !== slot) continue;
+      if (cells[i].arm === t) { e += dist(i, tip) * 0.15; continue; }
+      if (empties.length) {
+        let m = Infinity;
+        for (const k of empties) m = Math.min(m, dist(i, k));
+        e += m + 1;
+      } else e += dist(i, tip);
+    }
+    return e;
+  }
+
+  function chooseMove(slot) {
+    const occ = S.occ.slice();
+    const before = evaluate(occ, slot);
+    let best = null, bestScore = Infinity;
+    for (let i = 0; i < C; i++) {
+      if (occ[i] !== slot) continue;
+      const lag = dist(i, tipIdx[target(slot)]);
+      for (const [dest, path] of movesFrom(occ, i)) {
+        occ[i] = -1; occ[dest] = slot;
+        const score = evaluate(occ, slot) - before - lag * 0.02 + Math.random() * 0.05;
+        occ[dest] = -1; occ[i] = slot;
+        if (score < bestScore) { bestScore = score; best = path; }
+      }
+    }
+    return best;
+  }
+
+  // ---------- turn flow ----------
+  function commit(path) {
+    const slot = S.turn;
+    S.history.push({ occ: S.occ.slice(), turn: S.turn, last: S.last });
+    if (S.history.length > 400) S.history.shift();
+    selected = -1; options = null;
+    S.occ[path[0]] = -1;
+    anim = { path, slot, start: performance.now() };
+    vibrate(10);
+    requestAnimationFrame(tick);
+  }
+
+  function finishMove() {
+    const { path, slot } = anim;
+    anim = null;
+    S.occ[path[path.length - 1]] = slot;
+    S.last = path;
+    if (hasWon(S.occ, slot)) S.winner = slot;
+    else nextTurn();
+    save();
+    render();
+    maybeAI();
+  }
+
+  function nextTurn() {
+    for (let k = 0; k < S.n; k++) {
+      S.turn = (S.turn + 1) % S.n;
+      // skip a player who has no legal move at all (very rare)
+      for (let i = 0; i < C; i++) if (S.occ[i] === S.turn && movesFrom(S.occ, i).size) return;
+    }
+  }
+
+  function maybeAI() {
+    clearTimeout(aiTimer);
+    if (S.winner >= 0 || anim || !isAI(S.turn)) return;
+    aiTimer = setTimeout(() => {
+      const path = chooseMove(S.turn);
+      if (path) commit(path); else { nextTurn(); render(); maybeAI(); }
+    }, 420);
+  }
+
+  function undo() {
+    if (!S.history.length || anim) return;
+    clearTimeout(aiTimer);
+    let snap;
+    do { snap = S.history.pop(); } while (S.mode === 'ai' && snap.turn !== 0 && S.history.length);
+    S.occ = snap.occ; S.turn = snap.turn; S.last = snap.last; S.winner = -1;
+    selected = -1; options = null;
+    save(); render(); maybeAI();
+  }
+
+  function restart(changes) {
+    clearTimeout(aiTimer);
+    anim = null; selected = -1; options = null;
+    S = freshState(Object.assign({ n: S?.n, mode: S?.mode }, changes));
+    save(); render(); maybeAI();
+  }
+
+  // ---------- drawing ----------
+  const HOP = reduceMotion ? 1 : 150;
+  const UW = 13.4, UH = 15.0; // board size in hole spacings
+  const toPx = i => {
+    const c = cells[i];
+    return [W / 2 + (c.q + c.r / 2) * scale, H / 2 + c.r * scale * Math.sqrt(3) / 2];
+  };
+
+  function resize() {
+    const r = wrap.getBoundingClientRect();
+    scale = Math.max(14, Math.min(r.width / UW, r.height / UH));
+    W = Math.floor(UW * scale); H = Math.floor(UH * scale);
+    const dpr = window.devicePixelRatio || 1;
+    canvas.style.width = W + 'px'; canvas.style.height = H + 'px';
+    canvas.width = Math.round(W * dpr); canvas.height = Math.round(H * dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    starCache = null;
+    render();
+  }
+
+  let starCache = null;
+  function drawStarBoard() {
+    if (!starCache) {
+      const dpr = window.devicePixelRatio || 1;
+      starCache = document.createElement('canvas');
+      starCache.width = canvas.width; starCache.height = canvas.height;
+      const g = starCache.getContext('2d');
+      g.setTransform(dpr, 0, 0, dpr, 0, 0);
+      const css = getComputedStyle(document.documentElement);
+      g.beginPath();
+      for (let k = 0; k < 12; k++) {
+        const ang = (-90 + k * 30) * Math.PI / 180;
+        const rad = (k % 2 ? 4.55 : 7.35) * scale;
+        const x = W / 2 + Math.cos(ang) * rad, y = H / 2 + Math.sin(ang) * rad;
+        k ? g.lineTo(x, y) : g.moveTo(x, y);
+      }
+      g.closePath();
+      const grd = g.createLinearGradient(0, 0, W, H);
+      grd.addColorStop(0, css.getPropertyValue('--wood-a').trim());
+      grd.addColorStop(1, css.getPropertyValue('--wood-b').trim());
+      g.save();
+      g.shadowColor = 'rgba(40,25,10,.45)'; g.shadowBlur = scale * 0.8; g.shadowOffsetY = scale * 0.25;
+      g.lineJoin = 'round'; g.lineWidth = scale * 0.6;
+      g.fillStyle = grd; g.strokeStyle = grd;
+      g.fill(); g.stroke();
+      g.restore();
+      // wood grain, clipped to the star
+      g.save(); g.clip();
+      let seed = 11; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+      g.globalAlpha = 0.08;
+      for (let i = 0; i < 60; i++) {
+        const y0 = rnd() * H;
+        g.strokeStyle = rnd() > 0.5 ? '#7a4b1a' : '#f4d9a6';
+        g.lineWidth = 0.5 + rnd() * 2.5;
+        g.beginPath();
+        for (let x = 0; x <= W; x += 16) {
+          const y = y0 + Math.sin(x / (80 + rnd() * 40) + i) * 5;
+          x ? g.lineTo(x, y) : g.moveTo(x, y);
+        }
+        g.stroke();
+      }
+      g.restore();
+    }
+    ctx.drawImage(starCache, 0, 0, W, H);
+  }
+
+  function drawMarble(x, y, color, r, lift = 0) {
+    ctx.save();
+    ctx.shadowColor = 'rgba(30,15,0,.45)';
+    ctx.shadowBlur = r * 0.35 + lift * 6;
+    ctx.shadowOffsetY = r * 0.18 + lift * 5;
+    const g = ctx.createRadialGradient(x - r * 0.35, y - r * 0.4, r * 0.08, x, y, r);
+    g.addColorStop(0, 'rgba(255,255,255,.9)');
+    g.addColorStop(0.28, color);
+    g.addColorStop(1, shade(color, -0.45));
+    ctx.fillStyle = g;
+    ctx.beginPath(); ctx.arc(x, y - lift * r * 0.5, r * (1 + lift * 0.12), 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+  }
+  function shade(hex, f) {
+    const n = parseInt(hex.slice(1), 16);
+    const ch = s => Math.max(0, Math.min(255, Math.round(((n >> s) & 255) * (1 + f))));
+    return `rgb(${ch(16)},${ch(8)},${ch(0)})`;
+  }
+
+  function render() {
+    if (!scale || !S) return;
+    const css = getComputedStyle(document.documentElement);
+    const accent = css.getPropertyValue('--accent').trim();
+    const holeCol = css.getPropertyValue('--hole').trim();
+    ctx.clearRect(0, 0, W, H);
+    drawStarBoard();
+
+    // holes, home arms ringed in their owner's colour
+    const owner = {}; S.arms.forEach((a, s) => owner[a] = s);
+    for (let i = 0; i < C; i++) {
+      const [x, y] = toPx(i);
+      const a = cells[i].arm;
+      if (a >= 0 && owner[a] !== undefined) {
+        ctx.fillStyle = ARM_COLORS[a] + '40';
+        ctx.beginPath(); ctx.arc(x, y, scale * 0.47, 0, Math.PI * 2); ctx.fill();
+      }
+      ctx.fillStyle = holeCol;
+      ctx.globalAlpha = 0.55;
+      ctx.beginPath(); ctx.arc(x, y, scale * 0.2, 0, Math.PI * 2); ctx.fill();
+      ctx.globalAlpha = 1;
+    }
+
+    // last move trail
+    if (S.last && !anim) {
+      ctx.save();
+      ctx.strokeStyle = accent; ctx.globalAlpha = 0.5;
+      ctx.lineWidth = Math.max(2, scale * 0.09);
+      ctx.setLineDash([scale * 0.18, scale * 0.16]); ctx.lineCap = 'round';
+      ctx.beginPath();
+      S.last.forEach((i, k) => { const [x, y] = toPx(i); k ? ctx.lineTo(x, y) : ctx.moveTo(x, y); });
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    const R = scale * 0.4;
+    for (let i = 0; i < C; i++) {
+      if (S.occ[i] < 0) continue;
+      const [x, y] = toPx(i);
+      drawMarble(x, y, colorOf(S.occ[i]), R);
+    }
+
+    if (selected >= 0) {
+      const [x, y] = toPx(selected);
+      ctx.strokeStyle = accent; ctx.lineWidth = Math.max(2, scale * 0.1);
+      ctx.beginPath(); ctx.arc(x, y, R + scale * 0.1, 0, Math.PI * 2); ctx.stroke();
+      for (const d of options.keys()) {
+        const [dx, dy] = toPx(d);
+        ctx.fillStyle = colorOf(S.turn); ctx.globalAlpha = 0.45;
+        ctx.beginPath(); ctx.arc(dx, dy, R * 0.8, 0, Math.PI * 2); ctx.fill();
+        ctx.globalAlpha = 1;
+        ctx.strokeStyle = accent; ctx.lineWidth = 1.5;
+        ctx.beginPath(); ctx.arc(dx, dy, R * 0.8, 0, Math.PI * 2); ctx.stroke();
+      }
+    }
+
+    if (anim) {
+      const t = (performance.now() - anim.start) / HOP;
+      const hop = Math.min(Math.floor(t), anim.path.length - 2);
+      const f = Math.min(1, t - hop);
+      const [x0, y0] = toPx(anim.path[hop]), [x1, y1] = toPx(anim.path[hop + 1]);
+      const e = f < 0.5 ? 2 * f * f : 1 - Math.pow(-2 * f + 2, 2) / 2;
+      drawMarble(x0 + (x1 - x0) * e, y0 + (y1 - y0) * e, colorOf(anim.slot), R, Math.sin(Math.PI * f));
+    }
+    updateUI();
+  }
+
+  function tick() {
+    if (!anim) return;
+    if (performance.now() - anim.start >= HOP * (anim.path.length - 1)) { finishMove(); return; }
+    render();
+    requestAnimationFrame(tick);
+  }
+
+  const dot = slot => `<span class="dot" style="background:${colorOf(slot)}"></span>`;
+
+  function updateUI() {
+    if (S.winner >= 0) {
+      statusEl.innerHTML = `${dot(S.winner)}<span class="win">${S.mode === 'ai' ? (S.winner === 0 ? '你贏了' : nameOf(S.winner) + '獲勝') : nameOf(S.winner) + '獲勝'}</span>`;
+    } else if (isAI(S.turn)) {
+      statusEl.innerHTML = `${dot(S.turn)}${S.n > 2 ? nameOf(S.turn) : '電腦'}思考中…`;
+    } else {
+      statusEl.innerHTML = `${dot(S.turn)}${S.mode === 'ai' ? '輪到你' : nameOf(S.turn) + '落子'}`;
+    }
+
+    turnsEl.innerHTML = S.arms.map((a, s) => `<span class="${s === S.turn && S.winner < 0 ? 'now' : ''}">${dot(s)}${nameOf(s)}</span>`).join('');
+
+    hintEl.textContent = S.winner >= 0 ? '按「新局」再來一盤'
+      : isAI(S.turn) || anim ? ''
+      : selected >= 0 ? (options.size ? '點亮起的位置移動，可一路連跳' : '這顆走不動，換一顆試試')
+      : '點自己的棋子，把全部棋子移到正對面的角';
+
+    for (const b of document.querySelectorAll('[data-mode]')) b.setAttribute('aria-pressed', String(b.dataset.mode === S.mode));
+    for (const b of document.querySelectorAll('[data-n]')) b.setAttribute('aria-pressed', String(+b.dataset.n === S.n));
+    undoBtn.disabled = !S.history.length || !!anim || isAI(S.turn) && S.winner < 0;
+  }
+
+  // ---------- input ----------
+  function cellAt(e) {
+    const r = canvas.getBoundingClientRect();
+    const px = e.clientX - r.left, py = e.clientY - r.top;
+    let best = -1, bd = (scale * 0.6) ** 2;
+    for (let i = 0; i < C; i++) {
+      const [x, y] = toPx(i);
+      const d = (x - px) ** 2 + (y - py) ** 2;
+      if (d < bd) { bd = d; best = i; }
+    }
+    return best;
+  }
+
+  canvas.addEventListener('pointerup', e => {
+    if (S.winner >= 0 || anim || isAI(S.turn)) return;
+    const i = cellAt(e);
+    if (i >= 0 && options && options.has(i)) { commit(options.get(i)); return; }
+    if (i >= 0 && S.occ[i] === S.turn && i !== selected) {
+      selected = i; options = movesFrom(S.occ, i); vibrate(5);
+    } else { selected = -1; options = null; }
+    render();
+  });
+
+  function vibrate(ms) { try { navigator.vibrate && navigator.vibrate(ms); } catch (e) {} }
+
+  undoBtn.addEventListener('click', undo);
+  document.getElementById('restart').addEventListener('click', () => restart());
+  for (const b of document.querySelectorAll('[data-mode]')) b.addEventListener('click', () => {
+    if (b.dataset.mode !== S.mode) restart({ mode: b.dataset.mode });
+  });
+  for (const b of document.querySelectorAll('[data-n]')) b.addEventListener('click', () => {
+    if (+b.dataset.n !== S.n) restart({ n: +b.dataset.n });
+  });
+
+  matchMedia('(prefers-color-scheme: dark)').addEventListener?.('change', () => { starCache = null; render(); });
+  new ResizeObserver(resize).observe(wrap);
+
+  function start(data) {
+    S = data && data.state ? data.state : (load() || freshState());
+    resize();
+    maybeAI();
+  }
+  window.claude?.hot?.snapshot?.(() => {
+    if (!anim) return { state: S };
+    // mid-hop: hand over the position from before this move
+    const snap = S.history[S.history.length - 1];
+    return { state: Object.assign({}, S, { occ: snap.occ, turn: snap.turn, last: snap.last, history: S.history.slice(0, -1) }) };
+  });
+  window.claude?.hot?.ready ? window.claude.hot.ready(start) : start(window.claude?.hot?.data ?? {});
+})();
+</script>
+</body>
+</html>
