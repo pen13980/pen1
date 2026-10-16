@@ -1,0 +1,615 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<title>榧木五子棋</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=LXGW+WenKai+TC:wght@400;700&display=swap">
+<style>
+/* Layout: one-screen app — name + status strip, a square kaya board that fills the free space, a thumb-reach control bar. */
+:root {
+  --bg: #e9e4da;
+  --surface: #f6f2ea;
+  --ink: #2a241c;
+  --muted: #7a6d5c;
+  --line: #cfc5b4;
+  --accent: #a3361f;           /* 朱砂 seal red */
+  --wood-a: #e2b874;
+  --wood-b: #c9944c;
+  --grid: #4a3418;
+  --font-display: "LXGW WenKai TC", "Kaiti TC", "STKaiti", "BiauKai", serif;
+  --font-body: -apple-system, BlinkMacSystemFont, "PingFang TC", "Noto Sans TC", "Microsoft JhengHei", sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #1b1814; --surface: #26221c; --ink: #efe7da; --muted: #a59784;
+    --line: #3d362c; --accent: #e0644a; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #1b1814; --surface: #26221c; --ink: #efe7da; --muted: #a59784;
+  --line: #3d362c; --accent: #e0644a; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html, body { height: 100%; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-body);
+  font-size: 15px;
+  -webkit-tap-highlight-color: transparent;
+  overscroll-behavior: none;
+}
+.app {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-width: 640px;
+  margin: 0 auto;
+  padding-block: 12px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+h1 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 26px;
+  letter-spacing: 0.06em;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.seal {
+  display: inline-grid;
+  place-items: center;
+  width: 28px; height: 28px;
+  border: 2px solid var(--accent);
+  border-radius: 4px;
+  color: var(--accent);
+  font-size: 16px;
+  line-height: 1;
+  transform: rotate(-4deg);
+}
+.status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-display);
+  font-size: 18px;
+  min-width: 0;
+}
+.stone-icon {
+  width: 18px; height: 18px; border-radius: 50%;
+  flex: none;
+  box-shadow: 0 1px 2px rgba(0,0,0,.35);
+}
+.stone-icon.b { background: radial-gradient(circle at 35% 30%, #666, #111 60%); }
+.stone-icon.w { background: radial-gradient(circle at 35% 30%, #fff, #d9d6cf 70%); }
+.status .win { color: var(--accent); font-weight: 700; }
+
+.modes {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.seg {
+  display: inline-flex;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface);
+  padding: 3px;
+}
+.seg button {
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 14px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  cursor: pointer;
+}
+.seg button[aria-pressed="true"] {
+  background: var(--ink);
+  color: var(--bg);
+}
+
+.board-wrap {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: grid;
+  place-items: center;
+}
+canvas {
+  display: block;
+  touch-action: none;
+  border-radius: 6px;
+  box-shadow: 0 1px 0 rgba(255,255,255,.4) inset, 0 10px 24px -10px rgba(40,25,10,.55), 0 2px 4px rgba(40,25,10,.25);
+  max-width: 100%;
+}
+.hint {
+  text-align: center;
+  color: var(--muted);
+  font-size: 13px;
+  min-height: 1.3em;
+  margin: 0;
+}
+.controls {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+}
+.controls button {
+  font: inherit;
+  font-family: var(--font-display);
+  font-size: 17px;
+  padding: 12px 8px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--ink);
+  cursor: pointer;
+}
+.controls button.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+.controls button:disabled { opacity: .4; cursor: default; }
+button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.score {
+  display: flex;
+  justify-content: center;
+  gap: 18px;
+  color: var(--muted);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+.score span { display: inline-flex; align-items: center; gap: 6px; }
+.score .stone-icon { width: 12px; height: 12px; }
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <h1><span class="seal">弈</span>五子棋</h1>
+    <div class="status" id="status" aria-live="polite"></div>
+  </header>
+
+  <div class="modes">
+    <div class="seg" role="group" aria-label="對手">
+      <button id="mode-ai" data-mode="ai" aria-pressed="true">對電腦</button>
+      <button id="mode-pvp" data-mode="pvp" aria-pressed="false">雙人</button>
+    </div>
+    <div class="seg" role="group" aria-label="難度" id="level-seg">
+      <button id="lvl-1" data-level="1" aria-pressed="false">初段</button>
+      <button id="lvl-2" data-level="2" aria-pressed="true">中段</button>
+      <button id="lvl-3" data-level="3" aria-pressed="false">高段</button>
+    </div>
+  </div>
+
+  <div class="board-wrap" id="wrap">
+    <canvas id="board" aria-label="15 路棋盤"></canvas>
+  </div>
+
+  <p class="hint" id="hint">點一下預覽落點，再點同一格確認落子</p>
+
+  <div class="controls">
+    <button id="undo">悔棋</button>
+    <button id="swap">換先手</button>
+    <button id="restart" class="primary">新局</button>
+  </div>
+  <div class="score" id="score"></div>
+</div>
+
+<script>
+(() => {
+  const N = 15;
+  const EMPTY = 0, BLACK = 1, WHITE = 2;
+  const STARS = [[3,3],[3,11],[11,3],[11,11],[7,7]];
+  const DIRS = [[1,0],[0,1],[1,1],[1,-1]];
+
+  const canvas = document.getElementById('board');
+  const ctx = canvas.getContext('2d');
+  const wrap = document.getElementById('wrap');
+  const statusEl = document.getElementById('status');
+  const hintEl = document.getElementById('hint');
+  const scoreEl = document.getElementById('score');
+  const undoBtn = document.getElementById('undo');
+
+  let S; // game state
+  let preview = null;   // [x, y] pending confirmation
+  let aiTimer = null;
+  let size = 0, cell = 0, pad = 0;
+
+  function freshState(prev) {
+    return {
+      board: Array.from({length: N}, () => Array(N).fill(EMPTY)),
+      moves: [],
+      turn: BLACK,
+      winner: 0,
+      winLine: null,
+      mode: prev?.mode ?? 'ai',
+      level: prev?.level ?? 2,
+      humanColor: prev?.humanColor ?? BLACK,
+      wins: prev?.wins ?? {1: 0, 2: 0},
+    };
+  }
+
+  function save() {
+    try { localStorage.setItem('gomoku-state', JSON.stringify(S)); } catch (e) {}
+  }
+  function load() {
+    try {
+      const raw = localStorage.getItem('gomoku-state');
+      if (raw) {
+        const s = JSON.parse(raw);
+        if (s && Array.isArray(s.board) && s.board.length === N) return s;
+      }
+    } catch (e) {}
+    return null;
+  }
+
+  // ---------- rules ----------
+  const inside = (x, y) => x >= 0 && y >= 0 && x < N && y < N;
+
+  function findFive(b, x, y) {
+    const c = b[y][x];
+    for (const [dx, dy] of DIRS) {
+      const line = [[x, y]];
+      for (let k = 1; inside(x + dx*k, y + dy*k) && b[y + dy*k][x + dx*k] === c; k++) line.push([x + dx*k, y + dy*k]);
+      for (let k = 1; inside(x - dx*k, y - dy*k) && b[y - dy*k][x - dx*k] === c; k++) line.unshift([x - dx*k, y - dy*k]);
+      if (line.length >= 5) return line;
+    }
+    return null;
+  }
+
+  function place(x, y) {
+    if (S.winner || S.board[y][x] !== EMPTY) return false;
+    S.board[y][x] = S.turn;
+    S.moves.push([x, y, S.turn]);
+    const line = findFive(S.board, x, y);
+    if (line) {
+      S.winner = S.turn;
+      S.winLine = line;
+      S.wins[S.turn]++;
+    } else if (S.moves.length === N * N) {
+      S.winner = -1;
+    } else {
+      S.turn = S.turn === BLACK ? WHITE : BLACK;
+    }
+    preview = null;
+    vibrate(12);
+    save();
+    render();
+    maybeAI();
+    return true;
+  }
+
+  // ---------- AI: pattern scoring on candidate cells ----------
+  function lineScore(b, x, y, dx, dy, c) {
+    // count stones of colour c through (x,y), allowing one gap, and note open ends
+    let count = 1, open = 0, gap = 0;
+    for (const s of [1, -1]) {
+      let k = 1, usedGap = false;
+      while (true) {
+        const nx = x + dx*k*s, ny = y + dy*k*s;
+        if (!inside(nx, ny)) break;
+        const v = b[ny][nx];
+        if (v === c) { count++; k++; continue; }
+        if (v === EMPTY && !usedGap) {
+          const mx = nx + dx*s, my = ny + dy*s;
+          if (inside(mx, my) && b[my][mx] === c) { usedGap = true; gap++; k++; continue; }
+          open++;
+        }
+        break;
+      }
+    }
+    if (count >= 5 && gap === 0) return 1e6;
+    if (count >= 5) return 9000;              // gapped five = a four in effect
+    if (count === 4) return gap ? (open ? 2500 : 0) : open === 2 ? 50000 : open === 1 ? 2600 : 0;
+    if (count === 3) return open === 2 ? (gap ? 2000 : 2400) : open === 1 ? 200 : 0;
+    if (count === 2) return open === 2 ? 120 : open === 1 ? 12 : 0;
+    return open === 2 ? 6 : open === 1 ? 1 : 0;
+  }
+
+  function pointScore(b, x, y, c) {
+    let total = 0, strong = 0;
+    for (const [dx, dy] of DIRS) {
+      const s = lineScore(b, x, y, dx, dy, c);
+      if (s >= 2000) strong++;
+      total += s;
+    }
+    if (strong >= 2) total += 20000; // double threat (四三 / 三三)
+    return total;
+  }
+
+  function candidates(b) {
+    const out = [];
+    for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
+      if (b[y][x] !== EMPTY) continue;
+      let near = false;
+      for (let dy = -2; dy <= 2 && !near; dy++) for (let dx = -2; dx <= 2; dx++) {
+        const nx = x + dx, ny = y + dy;
+        if (inside(nx, ny) && b[ny][nx] !== EMPTY) { near = true; break; }
+      }
+      if (near) out.push([x, y]);
+    }
+    return out;
+  }
+
+  function chooseMove() {
+    const b = S.board, me = S.turn, opp = me === BLACK ? WHITE : BLACK;
+    if (S.moves.length === 0) return [7, 7];
+    const defWeight = [0, 0.6, 0.9, 1.0][S.level];
+    const scored = candidates(b).map(([x, y]) => {
+      b[y][x] = me;  const atk = pointScore(b, x, y, me);
+      b[y][x] = opp; const def = pointScore(b, x, y, opp);
+      b[y][x] = EMPTY;
+      const centre = 14 - Math.abs(x - 7) - Math.abs(y - 7);
+      return { x, y, s: atk * 1.05 + def * defWeight + centre * 0.1 };
+    }).sort((a, b) => b.s - a.s);
+
+    if (S.level === 3) {
+      // look one reply ahead on the best few: avoid moves that leave opponent a stronger answer
+      const top = scored.slice(0, 8);
+      let best = top[0], bestVal = -Infinity;
+      for (const m of top) {
+        if (m.s >= 1e6) return [m.x, m.y];
+        b[m.y][m.x] = me;
+        let reply = 0;
+        for (const [x, y] of candidates(b)) {
+          b[y][x] = opp; const v = pointScore(b, x, y, opp); b[y][x] = EMPTY;
+          if (v > reply) reply = v;
+        }
+        b[m.y][m.x] = EMPTY;
+        const val = m.s - reply * 0.8;
+        if (val > bestVal) { bestVal = val; best = m; }
+      }
+      return [best.x, best.y];
+    }
+    if (S.level === 1 && scored.length > 3 && scored[0].s < 2000) {
+      const pick = scored[Math.floor(Math.random() * Math.min(4, scored.length))];
+      return [pick.x, pick.y];
+    }
+    return [scored[0].x, scored[0].y];
+  }
+
+  const aiTurn = () => S.mode === 'ai' && !S.winner && S.turn !== S.humanColor;
+
+  function maybeAI() {
+    clearTimeout(aiTimer);
+    if (!aiTurn()) return;
+    render();
+    aiTimer = setTimeout(() => {
+      const [x, y] = chooseMove();
+      place(x, y);
+    }, 380);
+  }
+
+  // ---------- drawing ----------
+  function resize() {
+    const r = wrap.getBoundingClientRect();
+    size = Math.floor(Math.max(200, Math.min(r.width, r.height)));
+    const dpr = window.devicePixelRatio || 1;
+    canvas.style.width = size + 'px';
+    canvas.style.height = size + 'px';
+    canvas.width = Math.round(size * dpr);
+    canvas.height = Math.round(size * dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    cell = size / (N + 0.6);
+    pad = cell * 0.8;
+    render();
+  }
+
+  let grain = null;
+  function woodGrain() {
+    if (grain && grain.width === canvas.width) return grain;
+    grain = document.createElement('canvas');
+    grain.width = canvas.width; grain.height = canvas.height;
+    const g = grain.getContext('2d');
+    const css = getComputedStyle(document.documentElement);
+    const grd = g.createLinearGradient(0, 0, grain.width, grain.height);
+    grd.addColorStop(0, css.getPropertyValue('--wood-a').trim());
+    grd.addColorStop(1, css.getPropertyValue('--wood-b').trim());
+    g.fillStyle = grd;
+    g.fillRect(0, 0, grain.width, grain.height);
+    let seed = 7;
+    const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+    g.globalAlpha = 0.08;
+    for (let i = 0; i < 70; i++) {
+      const y0 = rnd() * grain.height;
+      g.strokeStyle = rnd() > 0.5 ? '#7a4b1a' : '#f4d9a6';
+      g.lineWidth = 0.5 + rnd() * 2.5;
+      g.beginPath();
+      for (let x = 0; x <= grain.width; x += 20) {
+        const y = y0 + Math.sin(x / (90 + rnd() * 40) + i) * 6;
+        x ? g.lineTo(x, y) : g.moveTo(x, y);
+      }
+      g.stroke();
+    }
+    return grain;
+  }
+
+  const px = i => pad + i * cell;
+
+  function drawStone(x, y, c, alpha = 1) {
+    const cx = px(x), cy = px(y), r = cell * 0.46;
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.shadowColor = 'rgba(30,15,0,.45)';
+    ctx.shadowBlur = cell * 0.12;
+    ctx.shadowOffsetY = cell * 0.06;
+    const g = ctx.createRadialGradient(cx - r*0.35, cy - r*0.4, r*0.1, cx, cy, r);
+    if (c === BLACK) { g.addColorStop(0, '#6a6a6a'); g.addColorStop(0.55, '#1c1c1c'); g.addColorStop(1, '#050505'); }
+    else { g.addColorStop(0, '#ffffff'); g.addColorStop(0.7, '#ece9e2'); g.addColorStop(1, '#c9c4b8'); }
+    ctx.fillStyle = g;
+    ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+  }
+
+  function render() {
+    if (!size) return;
+    const css = getComputedStyle(document.documentElement);
+    ctx.clearRect(0, 0, size, size);
+    ctx.drawImage(woodGrain(), 0, 0, size, size);
+
+    // grid
+    ctx.strokeStyle = css.getPropertyValue('--grid').trim();
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    for (let i = 0; i < N; i++) {
+      const p = Math.round(px(i)) + 0.5;
+      ctx.moveTo(px(0), p); ctx.lineTo(px(N-1), p);
+      ctx.moveTo(p, px(0)); ctx.lineTo(p, px(N-1));
+    }
+    ctx.stroke();
+    ctx.lineWidth = 2;
+    ctx.strokeRect(px(0), px(0), cell * (N-1), cell * (N-1));
+    ctx.fillStyle = ctx.strokeStyle;
+    for (const [x, y] of STARS) { ctx.beginPath(); ctx.arc(px(x), px(y), Math.max(2.5, cell*0.11), 0, Math.PI*2); ctx.fill(); }
+
+    for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) if (S.board[y][x]) drawStone(x, y, S.board[y][x]);
+
+    const last = S.moves[S.moves.length - 1];
+    if (last && !S.winLine) {
+      ctx.fillStyle = css.getPropertyValue('--accent').trim();
+      ctx.beginPath(); ctx.arc(px(last[0]), px(last[1]), cell * 0.12, 0, Math.PI*2); ctx.fill();
+    }
+    if (S.winLine) {
+      const a = S.winLine[0], z = S.winLine[S.winLine.length - 1];
+      ctx.strokeStyle = css.getPropertyValue('--accent').trim();
+      ctx.lineWidth = Math.max(3, cell * 0.14);
+      ctx.lineCap = 'round';
+      ctx.beginPath(); ctx.moveTo(px(a[0]), px(a[1])); ctx.lineTo(px(z[0]), px(z[1])); ctx.stroke();
+    }
+    if (preview) {
+      drawStone(preview[0], preview[1], S.turn, 0.55);
+      ctx.strokeStyle = css.getPropertyValue('--accent').trim();
+      ctx.lineWidth = 2;
+      const r = cell * 0.5;
+      ctx.strokeRect(px(preview[0]) - r, px(preview[1]) - r, r*2, r*2);
+    }
+    updateUI();
+  }
+
+  const colorName = c => c === BLACK ? '黑' : '白';
+  const icon = c => `<span class="stone-icon ${c === BLACK ? 'b' : 'w'}"></span>`;
+
+  function updateUI() {
+    let html;
+    if (S.winner === -1) html = '和局';
+    else if (S.winner) {
+      const who = S.mode === 'ai' ? (S.winner === S.humanColor ? '你贏了' : '電腦獲勝') : `${colorName(S.winner)}方獲勝`;
+      html = `${icon(S.winner)}<span class="win">${who}</span>`;
+    } else if (aiTurn()) html = `${icon(S.turn)}電腦思考中…`;
+    else html = `${icon(S.turn)}${S.mode === 'ai' ? '輪到你' : colorName(S.turn) + '方落子'}`;
+    statusEl.innerHTML = html;
+
+    hintEl.textContent = S.winner ? '按「新局」再來一盤'
+      : preview ? '再點一次確認，點別處可改位置'
+      : S.moves.length === 0 ? '點一下預覽落點，再點同一格確認落子'
+      : `第 ${S.moves.length + 1} 手`;
+
+    for (const b of document.querySelectorAll('[data-mode]')) b.setAttribute('aria-pressed', String(b.dataset.mode === S.mode));
+    for (const b of document.querySelectorAll('[data-level]')) b.setAttribute('aria-pressed', String(+b.dataset.level === S.level));
+    document.getElementById('level-seg').hidden = S.mode !== 'ai';
+    document.getElementById('swap').hidden = S.mode !== 'ai';
+    document.querySelector('.controls').style.gridTemplateColumns = S.mode === 'ai' ? 'repeat(3, 1fr)' : 'repeat(2, 1fr)';
+    undoBtn.disabled = S.moves.length === 0 || aiTurn();
+
+    if (S.mode === 'ai') {
+      scoreEl.innerHTML = `<span>你 ${icon(S.humanColor)} ${S.wins[S.humanColor]} 勝</span><span>電腦 ${icon(3 - S.humanColor)} ${S.wins[3 - S.humanColor]} 勝</span>`;
+    } else {
+      scoreEl.innerHTML = `<span>${icon(BLACK)} 黑 ${S.wins[1]} 勝</span><span>${icon(WHITE)} 白 ${S.wins[2]} 勝</span>`;
+    }
+  }
+
+  // ---------- input ----------
+  function cellFromEvent(e) {
+    const r = canvas.getBoundingClientRect();
+    const x = Math.round((e.clientX - r.left - pad) / cell);
+    const y = Math.round((e.clientY - r.top - pad) / cell);
+    return inside(x, y) ? [x, y] : null;
+  }
+
+  canvas.addEventListener('pointerup', e => {
+    if (S.winner || aiTurn()) return;
+    const c = cellFromEvent(e);
+    if (!c || S.board[c[1]][c[0]] !== EMPTY) { preview = null; render(); return; }
+    const isMouse = e.pointerType === 'mouse';
+    if (isMouse || (preview && preview[0] === c[0] && preview[1] === c[1])) place(c[0], c[1]);
+    else { preview = c; vibrate(5); render(); }
+  });
+  canvas.addEventListener('pointermove', e => {
+    if (e.pointerType !== 'mouse' || S.winner || aiTurn()) return;
+    const c = cellFromEvent(e);
+    const next = c && S.board[c[1]][c[0]] === EMPTY ? c : null;
+    if (String(next) !== String(preview)) { preview = next; render(); }
+  });
+  canvas.addEventListener('pointerleave', e => { if (e.pointerType === 'mouse' && preview) { preview = null; render(); } });
+
+  function vibrate(ms) { try { navigator.vibrate && navigator.vibrate(ms); } catch (e) {} }
+
+  function undo() {
+    if (!S.moves.length || aiTurn()) return;
+    // in AI mode take back the computer's reply too, so it's your turn again
+    const steps = S.mode === 'ai' && S.moves.length >= 2 && S.moves[S.moves.length-1][2] !== S.humanColor ? 2 : 1;
+    for (let i = 0; i < steps && S.moves.length; i++) {
+      const [x, y, c] = S.moves.pop();
+      S.board[y][x] = EMPTY;
+      S.turn = c;
+    }
+    if (S.winner > 0) S.wins[S.winner]--;
+    S.winner = 0; S.winLine = null; preview = null;
+    save(); render(); maybeAI();
+  }
+
+  function restart() {
+    clearTimeout(aiTimer);
+    S = freshState(S);
+    preview = null;
+    save(); render(); maybeAI();
+  }
+
+  undoBtn.addEventListener('click', undo);
+  document.getElementById('restart').addEventListener('click', restart);
+  document.getElementById('swap').addEventListener('click', () => {
+    S.humanColor = 3 - S.humanColor;
+    restart();
+  });
+  for (const b of document.querySelectorAll('[data-mode]')) b.addEventListener('click', () => {
+    if (S.mode === b.dataset.mode) return;
+    S.mode = b.dataset.mode; S.wins = {1: 0, 2: 0};
+    restart();
+  });
+  for (const b of document.querySelectorAll('[data-level]')) b.addEventListener('click', () => {
+    S.level = +b.dataset.level; save(); updateUI();
+  });
+
+  matchMedia('(prefers-color-scheme: dark)').addEventListener?.('change', render);
+  new ResizeObserver(resize).observe(wrap);
+
+  function start(data) {
+    S = data && data.state ? data.state : (load() || freshState());
+    resize();
+    maybeAI();
+  }
+  window.claude?.hot?.snapshot?.(() => ({ state: S }));
+  window.claude?.hot?.ready ? window.claude.hot.ready(start) : start(window.claude?.hot?.data ?? {});
+})();
+</script>
+</body>
+</html>
