@@ -71,6 +71,22 @@ h1 {
   align-items: center;
   gap: 8px;
 }
+.brand { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.home {
+  display: inline-grid;
+  place-items: center;
+  width: 36px; height: 36px;
+  flex: none;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  background: var(--surface);
+  color: var(--ink);
+  text-decoration: none;
+  font-size: 22px;
+  line-height: 1;
+  padding-bottom: 2px;
+}
+.home:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .seal {
   display: inline-grid;
   place-items: center;
@@ -184,7 +200,10 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 <body>
 <div class="app">
   <header>
-    <h1><span class="seal">弈</span>五子棋</h1>
+    <div class="brand">
+      <a class="home" id="home" href="../index.html" aria-label="回首頁" hidden>‹</a>
+      <h1><span class="seal">弈</span>五子棋</h1>
+    </div>
     <div class="status" id="status" aria-live="polite"></div>
   </header>
 
@@ -601,6 +620,8 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
   matchMedia('(prefers-color-scheme: dark)').addEventListener?.('change', render);
   new ResizeObserver(resize).observe(wrap);
+  // the menu page only exists on the published site or a local copy
+  if (/github\.io$|^localhost$|^127\./.test(location.hostname) || location.protocol === 'file:') document.getElementById('home').hidden = false;
 
   function start(data) {
     S = data && data.state ? data.state : (load() || freshState());
