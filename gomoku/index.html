@@ -216,6 +216,7 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
       <button id="lvl-1" data-level="1" aria-pressed="false">初段</button>
       <button id="lvl-2" data-level="2" aria-pressed="true">中段</button>
       <button id="lvl-3" data-level="3" aria-pressed="false">高段</button>
+      <button id="lvl-4" data-level="4" aria-pressed="false">名人</button>
     </div>
   </div>
 
@@ -372,6 +373,7 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   function chooseMove() {
     const b = S.board, me = S.turn, opp = me === BLACK ? WHITE : BLACK;
     if (S.moves.length === 0) return [7, 7];
+    if (S.level === 4) return searchMove();
     const defWeight = [0, 0.6, 0.9, 1.0][S.level];
     const scored = candidates(b).map(([x, y]) => {
       b[y][x] = me;  const atk = pointScore(b, x, y, me);
@@ -406,6 +408,154 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
     return [scored[0].x, scored[0].y];
   }
 
+  // ---------- 名人 (level 4): threat-space VCF + iterative-deepening alpha-beta ----------
+  const WIN = 1e7, TIMEOUT = {};
+  const WW = [0, 1, 10, 80, 700, 0];
+  let deadline = 0;
+
+  // empty cells on the 4 lines through (x,y) where colour c would complete five
+  function fiveCells(b, x, y, c) {
+    const out = [];
+    for (const [dx, dy] of DIRS) for (let k = -4; k <= 4; k++) {
+      const ex = x + dx*k, ey = y + dy*k;
+      if (!inside(ex, ey) || b[ey][ex] !== EMPTY) continue;
+      let n = 1;
+      for (let j = 1; inside(ex + dx*j, ey + dy*j) && b[ey + dy*j][ex + dx*j] === c; j++) n++;
+      for (let j = 1; inside(ex - dx*j, ey - dy*j) && b[ey - dy*j][ex - dx*j] === c; j++) n++;
+      if (n >= 5 && !out.some(p => p[0] === ex && p[1] === ey)) out.push([ex, ey]);
+    }
+    return out;
+  }
+
+  // static eval from the side to move, by counting 5-cell windows held by one colour
+  function evaluate(b, me, ply) {
+    const opp = 3 - me;
+    let sm = 0, so = 0, myFour = false, oppCell = -1, oppDouble = false;
+    for (const [dx, dy] of DIRS) for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
+      if (!inside(x + 4*dx, y + 4*dy)) continue;
+      let cm = 0, co = 0, emp = -1;
+      for (let k = 0; k < 5; k++) {
+        const v = b[y + k*dy][x + k*dx];
+        if (v === me) cm++; else if (v === opp) co++; else emp = (y + k*dy) * N + x + k*dx;
+      }
+      if (cm && !co) { if (cm === 4) myFour = true; sm += WW[cm]; }
+      else if (co && !cm) {
+        if (co === 4) { if (oppCell >= 0 && oppCell !== emp) oppDouble = true; oppCell = emp; }
+        so += WW[co];
+      }
+    }
+    if (myFour) return WIN - ply;
+    if (oppDouble) return -(WIN - ply - 1);
+    return sm * 1.15 - so;
+  }
+
+  // ordered moves for colour me; {win} if it can make five, forced blocks if the opponent can
+  function genMoves(b, me, limit) {
+    const opp = 3 - me, list = [], blocks = [];
+    for (const [x, y] of candidates(b)) {
+      b[y][x] = me;  const a = pointScore(b, x, y, me);
+      b[y][x] = opp; const d = pointScore(b, x, y, opp);
+      b[y][x] = EMPTY;
+      if (a >= 1e6) return { win: [x, y] };
+      if (d >= 1e6) blocks.push([x, y]);
+      list.push({ x, y, s: a + d * 0.9 });
+    }
+    if (blocks.length) return { moves: blocks, blocked: true };
+    list.sort((p, q) => q.s - p.s);
+    return { moves: list.slice(0, limit).map(m => [m.x, m.y]) };
+  }
+
+  function negamax(b, me, depth, alpha, beta, ply) {
+    if (Date.now() > deadline) throw TIMEOUT;
+    if (depth === 0) return evaluate(b, me, ply);
+    const g = genMoves(b, me, depth >= 3 ? 10 : 7);
+    if (g.win) return WIN - ply;
+    if (g.blocked && g.moves.length > 1) return -(WIN - ply - 1);  // two fives to stop
+    let best = -Infinity;
+    for (const [x, y] of g.moves) {
+      b[y][x] = me;
+      const v = -negamax(b, 3 - me, depth - 1, -beta, -alpha, ply + 1);
+      b[y][x] = EMPTY;
+      if (v > best) best = v;
+      if (v > alpha) alpha = v;
+      if (alpha >= beta) break;
+    }
+    return best;
+  }
+
+  function hasFive(b, c) {
+    for (const [x, y] of candidates(b)) {
+      b[y][x] = c; const s = pointScore(b, x, y, c); b[y][x] = EMPTY;
+      if (s >= 1e6) return true;
+    }
+    return false;
+  }
+
+  // victory by continuous fours: me keeps making fours, opponent is forced to block each
+  function vcf(b, me, depth) {
+    if (depth > 12 || Date.now() > deadline) return null;
+    const opp = 3 - me;
+    for (const [x, y] of candidates(b)) {
+      b[y][x] = me;
+      const wins = fiveCells(b, x, y, me);
+      if (wins.length >= 2) { b[y][x] = EMPTY; return [x, y]; }
+      if (wins.length === 1) {
+        const [bx, by] = wins[0];
+        b[by][bx] = opp;
+        const ok = fiveCells(b, bx, by, opp).length === 0 && vcf(b, me, depth + 1);
+        b[by][bx] = EMPTY;
+        if (ok) { b[y][x] = EMPTY; return [x, y]; }
+      }
+      b[y][x] = EMPTY;
+    }
+    return null;
+  }
+
+  function searchMove() {
+    const b = S.board.map(r => r.slice()), me = S.turn, opp = 3 - me;
+    const root = genMoves(b, me, 14);
+    if (root.win) return root.win;
+    if (root.moves.length === 1 || hasFive(b, opp)) return root.moves[0];
+
+    deadline = Date.now() + 250;
+    const win = vcf(b, me, 0);
+    if (win) return win;
+
+    deadline = Date.now() + 1100;
+    let moves = root.moves, scores = new Map(), bestMove = moves[0];
+    try {
+      for (let depth = 1; depth <= 10; depth++) {
+        let alpha = -Infinity, best = moves[0];
+        const vals = [];
+        for (const m of moves) {
+          b[m[1]][m[0]] = me;
+          const v = -negamax(b, opp, depth, -Infinity, -alpha, 1);
+          b[m[1]][m[0]] = EMPTY;
+          vals.push([m, v]);
+          if (v > alpha) { alpha = v; best = m; }
+        }
+        bestMove = best;
+        vals.sort((p, q) => q[1] - p[1]);
+        moves = vals.map(p => p[0]);
+        scores = new Map(vals.map(([m, v]) => [m, v]));
+        if (alpha >= WIN - 100 || alpha <= -(WIN - 100)) break;
+      }
+    } catch (e) { if (e !== TIMEOUT) throw e; }
+
+    // avoid a move that hands the opponent a forced four-sequence win
+    deadline = Date.now() + 400;
+    for (const m of [bestMove, ...moves.filter(m => m !== bestMove)].slice(0, 6)) {
+      if ((scores.get(m) ?? 0) <= -(WIN - 100)) continue;
+      b[m[1]][m[0]] = me;
+      const forced = fiveCells(b, m[0], m[1], me).length > 0;  // opponent must answer our four first
+      const lose = !forced && vcf(b, opp, 0);
+      b[m[1]][m[0]] = EMPTY;
+      if (!lose) return m;
+      if (Date.now() > deadline) break;
+    }
+    return bestMove;
+  }
+
   const aiTurn = () => S.mode === 'ai' && !S.winner && S.turn !== S.humanColor;
 
   function maybeAI() {
@@ -415,7 +565,7 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
     aiTimer = setTimeout(() => {
       const [x, y] = chooseMove();
       place(x, y);
-    }, 380);
+    }, S.level === 4 ? 120 : 380);
   }
 
   // ---------- drawing ----------
