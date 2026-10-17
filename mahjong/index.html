@@ -152,13 +152,10 @@ h1 {
 .t i { font-style: normal; font-size: .38em; font-weight: 700; }
 .t .one { font-size: .66em; }
 .s0 b { color: #1d1d1d; } .s0 i { color: #b3261e; }
-.s1 b, .s1 i { color: #1f5fae; }
-.s2 b, .s2 i { color: #1f7a45; }
+.t svg { display: block; width: 88%; height: auto; font-family: var(--font-display); }
 .zh .one { color: #c0261b; }
 .fa .one { color: #1f7a45; }
 .bai u { display: block; width: .46em; height: .64em; border: max(1px, .07em) solid #1f5fae; border-radius: .05em; }
-.fl .one { color: #8a4fc7; font-size: .5em; }
-.fl i { color: #b4651b; }
 .t.back { background: linear-gradient(160deg, #46a982, var(--tile-edge)); box-shadow: 0 calc(var(--w) * .1) 0 #1d5a41, 0 calc(var(--w) * .1 + 1px) 2px rgba(0,0,0,.35); }
 .t.last { outline: 2px solid var(--accent); outline-offset: 1px; }
 .t.win { outline: 2px solid var(--accent); outline-offset: 1px; }
@@ -358,15 +355,91 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   const isFlower = t => t >= 34;
   const byType = (a, b) => a - b;
 
+  // ---------- tile faces drawn as SVG (筒 dots, 條 bamboo, 花 icons) on a 30×40 grid ----------
+  const BLUE = '#1f5fae', GREEN = '#1f7a45', RED = '#c0261b', FACE = '#f8f4ea';
+  const DOTS = [
+    null,
+    [[15, 11, 7.5, GREEN], [15, 29, 7.5, BLUE]],
+    [[7, 8, 6, BLUE], [15, 20, 6, RED], [23, 32, 6, GREEN]],
+    [[8, 11, 6, BLUE], [22, 11, 6, GREEN], [8, 29, 6, GREEN], [22, 29, 6, BLUE]],
+    [[7.5, 8.5, 5.5, BLUE], [22.5, 8.5, 5.5, GREEN], [15, 20, 5.5, RED], [7.5, 31.5, 5.5, GREEN], [22.5, 31.5, 5.5, BLUE]],
+    [[9, 8, 5, GREEN], [21, 8, 5, GREEN], [9, 21, 5, RED], [21, 21, 5, RED], [9, 33, 5, RED], [21, 33, 5, RED]],
+    [[6, 5.5, 4.5, GREEN], [15, 10, 4.5, GREEN], [24, 14.5, 4.5, GREEN], [9, 24.5, 4.5, RED], [21, 24.5, 4.5, RED], [9, 34.5, 4.5, RED], [21, 34.5, 4.5, RED]],
+    [6, 15.5, 25, 34.5].flatMap(y => [[9, y, 4.5, BLUE], [21, y, 4.5, BLUE]]),
+    [[8, BLUE], [20, RED], [32, GREEN]].flatMap(([y, c]) => [6, 15, 24].map(x => [x, y, 4.3, c]))
+  ];
+  // [x, y, length, colour, tilt°]
+  const STICKS = [
+    null,
+    [[15, 11, 15, GREEN], [15, 29, 15, BLUE]],
+    [[15, 11, 15, GREEN], [9, 29, 15, BLUE], [21, 29, 15, BLUE]],
+    [[9, 11, 15, GREEN], [21, 11, 15, BLUE], [9, 29, 15, BLUE], [21, 29, 15, GREEN]],
+    [[7, 11, 15, GREEN], [23, 11, 15, BLUE], [15, 20, 15, RED], [7, 29, 15, BLUE], [23, 29, 15, GREEN]],
+    [11, 29].flatMap((y, r) => [6, 15, 24].map(x => [x, y, 15, r ? BLUE : GREEN])),
+    [[15, 7, 11, RED]].concat([20, 33].flatMap((y, r) => [6, 15, 24].map(x => [x, y, 11, r ? BLUE : GREEN]))),
+    [[5, 11, 15, GREEN, 0], [12, 11, 15, GREEN, -24], [18, 11, 15, GREEN, 24], [25, 11, 15, GREEN, 0],
+     [5, 29, 15, BLUE, 0], [12, 29, 15, BLUE, 24], [18, 29, 15, BLUE, -24], [25, 29, 15, BLUE, 0]],
+    [7, 20, 33].flatMap(y => [[6, y, 11, GREEN], [15, y, 11, RED], [24, y, 11, BLUE]])
+  ];
+  const dot = ([x, y, r, c]) => `<circle cx="${x}" cy="${y}" r="${r}" fill="${c}"/><circle cx="${x}" cy="${y}" r="${r * .62}" fill="${FACE}"/><circle cx="${x}" cy="${y}" r="${r * .34}" fill="${c}"/>`;
+  const stick = ([x, y, l, c, a = 0]) => `<g transform="rotate(${a} ${x} ${y})"><rect x="${x - 2.1}" y="${y - l / 2}" width="4.2" height="${l}" rx="2.1" fill="${c}"/>`
+    + `<rect x="${x - 2.1}" y="${y - .5}" width="4.2" height="1" fill="${FACE}"/><rect x="${x - .5}" y="${y - l / 2 + 2}" width="1" height="${l - 4}" fill="${FACE}" opacity=".45"/></g>`;
+  const BIRD = `<path d="M15 25 L6 37 L11 36 L15 39 L19 36 L24 37 Z" fill="${BLUE}"/><path d="M15 26 L9 36 M15 26 L15 38 M15 26 L21 36" stroke="${FACE}" stroke-width="1"/>`
+    + `<ellipse cx="15" cy="20" rx="6.5" ry="8" fill="${GREEN}"/><path d="M11 18 Q15 25 19 18" fill="none" stroke="${FACE}" stroke-width="1.2"/>`
+    + `<circle cx="15" cy="9" r="4.5" fill="${RED}"/><path d="M19 8 L24 9.5 L19 11 Z" fill="#d89a1d"/><circle cx="16.2" cy="8" r="1" fill="${FACE}"/>`
+    + `<path d="M13 5 L11 1 M15 4.5 L15 0.5 M17 5 L19 1" stroke="${RED}" stroke-width="1.2" stroke-linecap="round"/>`;
+  const petals = (n, r, len, w, c, cx = 15, cy = 19) => Array.from({ length: n }, (_, i) =>
+    `<ellipse cx="${cx}" cy="${cy - r}" rx="${w}" ry="${len}" fill="${c}" transform="rotate(${i * 360 / n} ${cx} ${cy})"/>`).join('');
+  const FLOWER_ART = [
+    // 春 sprout
+    `<path d="M15 31 V17" stroke="${GREEN}" stroke-width="2"/><path d="M15 21 C9 21 6 16 7 12 C12 12 15 16 15 21Z" fill="${GREEN}"/><path d="M15 18 C20 18 24 14 23 9 C18 9 15 13 15 18Z" fill="#4aa564"/><circle cx="15" cy="31" r="2.5" fill="#b4651b"/>`,
+    // 夏 sun
+    petals(8, 8.5, 3, 1.5, '#e08a1e') + `<circle cx="15" cy="19" r="6" fill="${RED}"/>`,
+    // 秋 maple leaf
+    `<path d="M15 9 L17 14 L22 12 L20 17 L25 18 L20 21 L22 25 L16.5 23.5 L16 30 L14 30 L13.5 23.5 L8 25 L10 21 L5 18 L10 17 L8 12 L13 14 Z" fill="#d0581c"/><path d="M15 14 V31" stroke="#8a3410" stroke-width="1"/>`,
+    // 冬 snowflake
+    `<g stroke="${BLUE}" stroke-width="1.8" stroke-linecap="round">${[0, 60, 120].map(a => `<path d="M15 10 V28 M12 12 L15 15 L18 12 M12 26 L15 23 L18 26" transform="rotate(${a} 15 19)"/>`).join('')}</g>`,
+    // 梅 plum blossom
+    petals(5, 5, 4.5, 4, '#d9467a') + `<circle cx="15" cy="19" r="2.6" fill="#f2c94c"/>`,
+    // 蘭 orchid
+    `<path d="M15 32 C11 25 7 22 4 21 M15 32 C15 24 17 18 22 14 M15 32 C18 27 23 26 27 26" fill="none" stroke="${GREEN}" stroke-width="1.6"/>` + petals(3, 4, 4, 2.6, '#8a4fc7', 15, 14) + `<circle cx="15" cy="14" r="1.6" fill="#f2c94c"/>`,
+    // 竹 bamboo
+    `<rect x="8" y="6" width="3.5" height="28" rx="1.5" fill="${GREEN}"/><path d="M8 14 H11.5 M8 23 H11.5" stroke="${FACE}" stroke-width="1"/>`
+      + `<path d="M11.5 14 C16 10 21 10 25 11 C21 13 16 14 11.5 14Z M11.5 23 C16 21 21 23 24 26 C19 26 15 25 11.5 23Z M11.5 18 C15 16 19 15 22 17 C18 18 15 19 11.5 18Z" fill="#4aa564"/>`,
+    // 菊 chrysanthemum
+    petals(14, 6.5, 4, 1.4, '#e0a91e') + `<circle cx="15" cy="19" r="3.4" fill="#b4651b"/>`
+  ];
+  const faces = new Map();
+  function faceSVG(t) {
+    let s = faces.get(t);
+    if (s) return s;
+    let body;
+    if (t < 18) body = t === 9
+      ? `<circle cx="15" cy="20" r="13" fill="${BLUE}"/><circle cx="15" cy="20" r="11" fill="${FACE}"/>` + petals(12, 8.3, 1.8, 1.8, GREEN, 15, 20)
+        + `<circle cx="15" cy="20" r="5.5" fill="${RED}"/><circle cx="15" cy="20" r="3.4" fill="${FACE}"/><circle cx="15" cy="20" r="1.8" fill="${RED}"/>`
+      : DOTS[t - 9].map(dot).join('');
+    else if (t < 27) body = t === 18 ? BIRD : STICKS[t - 18].map(stick).join('');
+    else {
+      const f = t - 34;
+      body = `<g transform="translate(0 -1)">${FLOWER_ART[f]}</g>`
+        + `<text x="27" y="7" font-size="7" font-weight="700" text-anchor="end" fill="${RED}">${f % 4 + 1}</text>`
+        + `<text x="15" y="39" font-size="7.5" font-weight="700" text-anchor="middle" fill="#5b3a8a">${FLW[f]}</text>`;
+    }
+    s = `<svg viewBox="0 0 30 40" aria-hidden="true">${body}</svg>`;
+    faces.set(t, s);
+    return s;
+  }
+
   function tile(t, cls = '', tag = 'span', attrs = '') {
     let k, inner;
     if (t < 0) { k = 'back'; inner = ''; }
-    else if (t < 27) { const s = (t / 9) | 0; k = 's' + s; inner = `<b>${NUM[t % 9]}</b><i>${SUIT[s]}</i>`; }
+    else if (t < 9) { k = 's0'; inner = `<b>${NUM[t]}</b><i>萬</i>`; }
+    else if (t < 27) { k = t < 18 ? 's1' : 's2'; inner = faceSVG(t); }
     else if (t < 31) { k = 'wd'; inner = `<b class="one">${HON[t - 27]}</b>`; }
     else if (t === 31) { k = 'zh'; inner = '<b class="one">中</b>'; }
     else if (t === 32) { k = 'fa'; inner = '<b class="one">發</b>'; }
     else if (t === 33) { k = 'bai'; inner = '<u></u>'; }
-    else { k = 'fl'; inner = `<b class="one">${FLW[t - 34]}</b><i>${(t - 34) % 4 + 1}</i>`; }
+    else { k = 'fl'; inner = faceSVG(t); }
     const label = t < 0 ? '' : ` title="${tileName(t)}" aria-label="${tileName(t)}"`;
     return `<${tag} class="t ${k} ${cls}"${label} ${attrs}>${inner}</${tag}>`;
   }
