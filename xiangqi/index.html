@@ -1,0 +1,1099 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<title>楚河象棋</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=LXGW+WenKai+TC:wght@400;700&display=swap">
+<style>
+/* Layout: one-screen app — name + status strip, a full 9×10 board that fills the free space, a thumb-reach control bar. */
+:root {
+  --bg: #e9e4da;
+  --surface: #f6f2ea;
+  --ink: #2a241c;
+  --muted: #7a6d5c;
+  --line: #cfc5b4;
+  --accent: #a3361f;           /* 朱砂 seal red */
+  --font-display: "LXGW WenKai TC", "Kaiti TC", "STKaiti", "BiauKai", serif;
+  --font-body: -apple-system, BlinkMacSystemFont, "PingFang TC", "Noto Sans TC", "Microsoft JhengHei", sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #1b1814; --surface: #26221c; --ink: #efe7da; --muted: #a59784;
+    --line: #3d362c; --accent: #e0644a; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #1b1814; --surface: #26221c; --ink: #efe7da; --muted: #a59784;
+  --line: #3d362c; --accent: #e0644a; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html, body { height: 100%; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-body);
+  font-size: 15px;
+  -webkit-tap-highlight-color: transparent;
+  overscroll-behavior: none;
+}
+.app {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-width: 640px;
+  margin: 0 auto;
+  padding-block: 12px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+h1 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 26px;
+  letter-spacing: 0.06em;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+}
+.brand { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.home {
+  display: inline-grid;
+  place-items: center;
+  width: 36px; height: 36px;
+  flex: none;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  background: var(--surface);
+  color: var(--ink);
+  text-decoration: none;
+  font-size: 22px;
+  line-height: 1;
+  padding-bottom: 2px;
+}
+.home:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.seal {
+  display: inline-grid;
+  place-items: center;
+  width: 28px; height: 28px;
+  border: 2px solid var(--accent);
+  border-radius: 4px;
+  color: var(--accent);
+  font-size: 16px;
+  line-height: 1;
+  transform: rotate(-4deg);
+}
+.status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-display);
+  font-size: 18px;
+  min-width: 0;
+  white-space: nowrap;
+}
+.side-icon {
+  width: 18px; height: 18px; border-radius: 50%;
+  flex: none;
+  background: radial-gradient(circle at 35% 30%, #fbf1dc, #dcbc84 75%);
+  border: 2px solid currentColor;
+  box-shadow: 0 1px 2px rgba(0,0,0,.35);
+}
+.side-icon.r { color: #b5291c; }
+.side-icon.b { color: #1d1d1d; }
+.status .win { color: var(--accent); font-weight: 700; }
+
+.modes {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.seg {
+  display: inline-flex;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface);
+  padding: 3px;
+}
+.seg button {
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 14px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  cursor: pointer;
+}
+.seg button[aria-pressed="true"] {
+  background: var(--ink);
+  color: var(--bg);
+}
+
+.board-wrap {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: grid;
+  place-items: center;
+}
+canvas {
+  display: block;
+  touch-action: none;
+  border-radius: 6px;
+  box-shadow: 0 1px 0 rgba(255,255,255,.4) inset, 0 10px 24px -10px rgba(40,25,10,.55), 0 2px 4px rgba(40,25,10,.25);
+  max-width: 100%;
+}
+.hint {
+  text-align: center;
+  color: var(--muted);
+  font-size: 13px;
+  min-height: 1.3em;
+  margin: 0;
+}
+.hint b { color: var(--accent); font-weight: 700; }
+.controls {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+}
+.controls button {
+  font: inherit;
+  font-family: var(--font-display);
+  font-size: 17px;
+  padding: 12px 8px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--ink);
+  cursor: pointer;
+}
+.controls button.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+.controls button:disabled { opacity: .4; cursor: default; }
+button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.score {
+  display: flex;
+  justify-content: center;
+  gap: 18px;
+  color: var(--muted);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+.score span { display: inline-flex; align-items: center; gap: 6px; }
+.score .side-icon { width: 12px; height: 12px; border-width: 1.5px; }
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <div class="brand">
+      <a class="home" id="home" href="../index.html" aria-label="回首頁" hidden>‹</a>
+      <h1><span class="seal">帥</span>象棋</h1>
+    </div>
+    <div class="status" id="status" aria-live="polite"></div>
+  </header>
+
+  <div class="modes">
+    <div class="seg" role="group" aria-label="對手">
+      <button data-mode="ai" aria-pressed="true">對電腦</button>
+      <button data-mode="pvp" aria-pressed="false">雙人</button>
+    </div>
+    <div class="seg" role="group" aria-label="難度" id="level-seg">
+      <button data-level="1" aria-pressed="false">新手</button>
+      <button data-level="2" aria-pressed="true">業餘</button>
+      <button data-level="3" aria-pressed="false">高手</button>
+    </div>
+  </div>
+
+  <div class="board-wrap" id="wrap">
+    <canvas id="board" aria-label="象棋棋盤"></canvas>
+  </div>
+
+  <p class="hint" id="hint"></p>
+
+  <div class="controls">
+    <button id="undo">悔棋</button>
+    <button id="swap">換邊</button>
+    <button id="restart" class="primary">新局</button>
+  </div>
+  <div class="score" id="score"></div>
+</div>
+
+<script>
+(() => {
+  // ================= rules & engine =================
+  // Square = r*9 + c, r 0 is Black's back rank (top), r 9 is Red's back rank.
+  // Pieces: positive = Red, negative = Black.
+  const K = 1, A = 2, B = 3, N = 4, R = 5, C = 6, P = 7;
+  const RED = 1, BLACK = -1;
+  const NAME = { 1: '帥', 2: '仕', 3: '相', 4: '傌', 5: '俥', 6: '炮', 7: '兵',
+    '-1': '將', '-2': '士', '-3': '象', '-4': '馬', '-5': '車', '-6': '包', '-7': '卒' };
+  const INIT_FEN = 'rnbakabnr/9/1c5c1/p1p1p1p1p/9/9/P1P1P1P1P/1C5C1/9/RNBAKABNR';
+  const LETTER = { k: K, a: A, b: B, n: N, r: R, c: C, p: P };
+
+  function parseFen(fen) {
+    const b = new Array(90).fill(0);
+    fen.split('/').forEach((row, r) => {
+      let c = 0;
+      for (const ch of row) {
+        if (/\d/.test(ch)) { c += +ch; continue; }
+        const t = LETTER[ch.toLowerCase()];
+        b[r * 9 + c++] = ch === ch.toUpperCase() ? t : -t;
+      }
+    });
+    return b;
+  }
+
+  const ORTH = [[-1, 0], [1, 0], [0, -1], [0, 1]];
+  const DIAG = [[-1, -1], [-1, 1], [1, -1], [1, 1]];
+  // knight: [dr, dc, leg dr, leg dc]
+  const HORSE = [[-2, -1, -1, 0], [-2, 1, -1, 0], [2, -1, 1, 0], [2, 1, 1, 0],
+                 [-1, -2, 0, -1], [1, -2, 0, -1], [-1, 2, 0, 1], [1, 2, 0, 1]];
+  const onBoard = (r, c) => r >= 0 && r < 10 && c >= 0 && c < 9;
+  const inPalace = (side, r, c) => c >= 3 && c <= 5 && (side > 0 ? r >= 7 && r <= 9 : r >= 0 && r <= 2);
+  const ownHalf = (side, r) => side > 0 ? r >= 5 : r <= 4;
+
+  // material + piece-square tables (Red's view; Black mirrors rows)
+  const BASE = [0, 0, 120, 120, 270, 600, 285, 30];
+  const PST = [];
+  PST[P] = [
+     0,  2,  3,  5,  6,  5,  3,  2,  0,
+     9, 18, 28, 40, 60, 40, 28, 18,  9,
+     7, 13, 21, 30, 40, 30, 21, 13,  7,
+     5, 10, 15, 17, 20, 17, 15, 10,  5,
+     3,  6,  9,  9, 10,  9,  9,  6,  3,
+     1,  0,  4,  0,  6,  0,  4,  0,  1,
+     0,  0, -1,  0,  3,  0, -1,  0,  0,
+     0,  0,  0,  0,  0,  0,  0,  0,  0,
+     0,  0,  0,  0,  0,  0,  0,  0,  0,
+     0,  0,  0,  0,  0,  0,  0,  0,  0];
+  PST[N] = [
+     4,  8, 16, 12,  4, 12, 16,  8,  4,
+     4, 10, 28, 16,  8, 16, 28, 10,  4,
+    12, 14, 16, 20, 18, 20, 16, 14, 12,
+     8, 24, 18, 24, 20, 24, 18, 24,  8,
+     6, 16, 14, 18, 16, 18, 14, 16,  6,
+     4, 12, 16, 14, 12, 14, 16, 12,  4,
+     2,  6,  8,  6, 10,  6,  8,  6,  2,
+     4,  2,  8,  8,  4,  8,  8,  2,  4,
+     0,  2,  4,  4, -2,  4,  4,  2,  0,
+     0, -4,  0,  0,  0,  0,  0, -4,  0];
+  PST[R] = [
+    14, 14, 12, 18, 16, 18, 12, 14, 14,
+    16, 20, 18, 24, 26, 24, 18, 20, 16,
+    12, 12, 12, 18, 18, 18, 12, 12, 12,
+    12, 18, 16, 22, 22, 22, 16, 18, 12,
+    12, 14, 12, 18, 18, 18, 12, 14, 12,
+    12, 16, 14, 20, 20, 20, 14, 16, 12,
+     6, 10,  8, 14, 14, 14,  8, 10,  6,
+     4,  8,  6, 14, 12, 14,  6,  8,  4,
+     8,  4,  8, 16,  8, 16,  8,  4,  8,
+    -2, 10,  6, 14, 12, 14,  6, 10, -2];
+  PST[C] = [
+     6,  4,  0,-10,-12,-10,  0,  4,  6,
+     2,  2,  0, -4,-14, -4,  0,  2,  2,
+     2,  2,  0,-10, -8,-10,  0,  2,  2,
+     0,  0, -2,  4, 10,  4, -2,  0,  0,
+     0,  0,  0,  2,  8,  2,  0,  0,  0,
+    -2,  0,  4,  2,  6,  2,  4,  0, -2,
+     0,  0,  0,  2,  4,  2,  0,  0,  0,
+     4,  0,  8,  6, 10,  6,  8,  0,  4,
+     0,  2,  4,  6,  6,  6,  4,  2,  0,
+     0,  0,  2,  6,  6,  6,  2,  0,  0];
+  PST[K] = new Array(90).fill(0);
+  PST[K][7 * 9 + 3] = PST[K][7 * 9 + 4] = PST[K][7 * 9 + 5] = -16;
+  PST[K][8 * 9 + 3] = PST[K][8 * 9 + 4] = PST[K][8 * 9 + 5] = -8;
+  PST[K][9 * 9 + 3] = PST[K][9 * 9 + 5] = -2;
+  PST[A] = new Array(90).fill(0); PST[A][8 * 9 + 4] = 3;
+  PST[B] = new Array(90).fill(0); PST[B][7 * 9 + 4] = 3; PST[B][5 * 9 + 0] = PST[B][5 * 9 + 8] = -2;
+  // VAL[p + 7][sq]: signed, Red positive
+  const VAL = [];
+  for (let p = -7; p <= 7; p++) {
+    VAL[p + 7] = new Int32Array(90);
+    if (!p) continue;
+    const t = Math.abs(p);
+    for (let s = 0; s < 90; s++) {
+      const r = (s / 9) | 0, c = s % 9;
+      VAL[p + 7][s] = p > 0 ? BASE[t] + PST[t][s] : -(BASE[t] + PST[t][(9 - r) * 9 + c]);
+    }
+  }
+  const ORDER_VAL = [0, 10000, 120, 120, 270, 600, 285, 60];
+
+  // zobrist (two 32-bit halves)
+  let seed = 0x2545F491;
+  const rnd = () => { seed ^= seed << 13; seed ^= seed >>> 17; seed ^= seed << 5; return seed | 0; };
+  const ZA = [], ZB = [];
+  for (let p = 0; p < 15; p++) { ZA[p] = new Int32Array(90); ZB[p] = new Int32Array(90); for (let s = 0; s < 90; s++) { ZA[p][s] = rnd(); ZB[p][s] = rnd(); } }
+  const ZSA = rnd(), ZSB = rnd();
+
+  class Pos {
+    constructor(board, side) {
+      this.b = Int8Array.from(board);
+      this.side = side;
+      this.ha = 0; this.hb = 0; this.ev = 0;
+      this.kp = { 1: -1, '-1': -1 };
+      for (let s = 0; s < 90; s++) {
+        const p = this.b[s];
+        if (!p) continue;
+        this.ha ^= ZA[p + 7][s]; this.hb ^= ZB[p + 7][s];
+        this.ev += VAL[p + 7][s];
+        if (p === K) this.kp[1] = s; else if (p === -K) this.kp[-1] = s;
+      }
+      if (side < 0) { this.ha ^= ZSA; this.hb ^= ZSB; }
+      this.caps = [];
+      this.histA = []; this.histB = [];
+    }
+    make(m) {
+      const f = m >> 7, t = m & 127, b = this.b, p = b[f], q = b[t];
+      this.histA.push(this.ha); this.histB.push(this.hb);
+      this.ha ^= ZA[p + 7][f] ^ ZA[p + 7][t] ^ ZSA;
+      this.hb ^= ZB[p + 7][f] ^ ZB[p + 7][t] ^ ZSB;
+      this.ev += VAL[p + 7][t] - VAL[p + 7][f];
+      if (q) { this.ha ^= ZA[q + 7][t]; this.hb ^= ZB[q + 7][t]; this.ev -= VAL[q + 7][t]; }
+      b[t] = p; b[f] = 0;
+      if (p === K || p === -K) this.kp[p > 0 ? 1 : -1] = t;
+      this.caps.push(q);
+      this.side = -this.side;
+    }
+    unmake(m) {
+      const f = m >> 7, t = m & 127, b = this.b, p = b[t], q = this.caps.pop();
+      b[f] = p; b[t] = q;
+      if (p === K || p === -K) this.kp[p > 0 ? 1 : -1] = f;
+      this.ev += VAL[p + 7][f] - VAL[p + 7][t];
+      if (q) this.ev += VAL[q + 7][t];
+      this.ha = this.histA.pop(); this.hb = this.histB.pop();
+      this.side = -this.side;
+    }
+    // is `side`'s king attacked (incl. facing kings)?
+    attacked(side) {
+      const b = this.b, k = this.kp[side], kr = (k / 9) | 0, kc = k % 9, e = -side;
+      for (const [dr, dc] of ORTH) {
+        let r = kr + dr, c = kc + dc, screen = false;
+        while (onBoard(r, c)) {
+          const q = b[r * 9 + c];
+          if (q) {
+            if (!screen) {
+              if (q === e * R || q === e * K) return true;
+              screen = true;
+            } else {
+              if (q === e * C) return true;
+              break;
+            }
+          }
+          r += dr; c += dc;
+        }
+      }
+      for (const [dr, dc, lr, lc] of HORSE) {
+        const nr = kr - dr, nc = kc - dc;
+        if (!onBoard(nr, nc) || b[nr * 9 + nc] !== e * N) continue;
+        if (!b[(nr + lr) * 9 + nc + lc]) return true;
+      }
+      // enemy pawns: one step "behind" the king from their side, or beside it
+      const pr = kr + (side > 0 ? -1 : 1);
+      if (onBoard(pr, kc) && b[pr * 9 + kc] === e * P) return true;
+      if (kc > 0 && b[k - 1] === e * P) return true;
+      if (kc < 8 && b[k + 1] === e * P) return true;
+      return false;
+    }
+    inCheck() { return this.attacked(this.side); }
+    gen(capsOnly) {
+      const b = this.b, side = this.side, out = [];
+      const add = (f, t) => {
+        const q = b[t];
+        if (q ? (q > 0) === (side > 0) : capsOnly) return;
+        out.push(f << 7 | t);
+      };
+      for (let s = 0; s < 90; s++) {
+        const p = b[s];
+        if (!p || (p > 0) !== (side > 0)) continue;
+        const t = p > 0 ? p : -p, r = (s / 9) | 0, c = s % 9;
+        switch (t) {
+          case K:
+            for (const [dr, dc] of ORTH) if (inPalace(side, r + dr, c + dc)) add(s, s + dr * 9 + dc);
+            break;
+          case A:
+            for (const [dr, dc] of DIAG) if (inPalace(side, r + dr, c + dc)) add(s, s + dr * 9 + dc);
+            break;
+          case B:
+            for (const [dr, dc] of DIAG) {
+              const nr = r + 2 * dr, nc = c + 2 * dc;
+              if (onBoard(nr, nc) && ownHalf(side, nr) && !b[s + dr * 9 + dc]) add(s, nr * 9 + nc);
+            }
+            break;
+          case N:
+            for (const [dr, dc, lr, lc] of HORSE) {
+              const nr = r + dr, nc = c + dc;
+              if (onBoard(nr, nc) && !b[(r + lr) * 9 + c + lc]) add(s, nr * 9 + nc);
+            }
+            break;
+          case R:
+            for (const [dr, dc] of ORTH) {
+              let nr = r + dr, nc = c + dc;
+              while (onBoard(nr, nc)) {
+                const q = b[nr * 9 + nc];
+                if (!q) { if (!capsOnly) out.push(s << 7 | (nr * 9 + nc)); }
+                else { if ((q > 0) !== (side > 0)) out.push(s << 7 | (nr * 9 + nc)); break; }
+                nr += dr; nc += dc;
+              }
+            }
+            break;
+          case C:
+            for (const [dr, dc] of ORTH) {
+              let nr = r + dr, nc = c + dc, screen = false;
+              while (onBoard(nr, nc)) {
+                const q = b[nr * 9 + nc];
+                if (!screen) {
+                  if (!q) { if (!capsOnly) out.push(s << 7 | (nr * 9 + nc)); }
+                  else screen = true;
+                } else if (q) {
+                  if ((q > 0) !== (side > 0)) out.push(s << 7 | (nr * 9 + nc));
+                  break;
+                }
+                nr += dr; nc += dc;
+              }
+            }
+            break;
+          case P: {
+            const nr = r - side;
+            if (onBoard(nr, c)) add(s, nr * 9 + c);
+            if (!ownHalf(side, r)) {
+              if (c > 0) add(s, s - 1);
+              if (c < 8) add(s, s + 1);
+            }
+            break;
+          }
+        }
+      }
+      return out;
+    }
+    legal() {
+      const out = [];
+      for (const m of this.gen(false)) {
+        this.make(m);
+        if (!this.attacked(-this.side)) out.push(m);
+        this.unmake(m);
+      }
+      return out;
+    }
+  }
+
+  // ---------- search ----------
+  const MATE = 30000, INF = 32000;
+  const TT_BITS = 19, TT_MASK = (1 << TT_BITS) - 1;
+  const ttB = new Int32Array(1 << TT_BITS), ttM = new Int32Array(1 << TT_BITS), ttS = new Int16Array(1 << TT_BITS);
+  const ttD = new Int8Array(1 << TT_BITS), ttF = new Int8Array(1 << TT_BITS); // flag 1 exact, 2 lower, 3 upper
+  const history = new Int32Array(128 * 128);
+  let killers = [], nodes = 0, deadline = 0, aborted = false, pos = null;
+
+  function isRepeat() {
+    const hA = pos.histA, hB = pos.histB;
+    for (let i = hA.length - 2, n = 0; i >= 0 && n < 50; i -= 2, n += 2) {
+      if (hA[i] === pos.ha && hB[i] === pos.hb) return true;
+    }
+    return false;
+  }
+
+  function orderMoves(moves, ttMove, ply) {
+    const b = pos.b, scores = new Array(moves.length);
+    const k = killers[ply] || [];
+    for (let i = 0; i < moves.length; i++) {
+      const m = moves[i], q = b[m & 127];
+      if (m === ttMove) scores[i] = 1e9;
+      else if (q) scores[i] = 1e7 + ORDER_VAL[Math.abs(q)] * 16 - ORDER_VAL[Math.abs(b[m >> 7])];
+      else if (m === k[0]) scores[i] = 9e6;
+      else if (m === k[1]) scores[i] = 8e6;
+      else scores[i] = history[m];
+    }
+    return scores;
+  }
+  function pickNext(moves, scores, i) {
+    let bi = i;
+    for (let j = i + 1; j < moves.length; j++) if (scores[j] > scores[bi]) bi = j;
+    if (bi !== i) {
+      let t = moves[i]; moves[i] = moves[bi]; moves[bi] = t;
+      t = scores[i]; scores[i] = scores[bi]; scores[bi] = t;
+    }
+    return moves[i];
+  }
+
+  function quiesce(alpha, beta, ply) {
+    if ((++nodes & 2047) === 0 && Date.now() > deadline) aborted = true;
+    if (aborted) return 0;
+    const stand = pos.side * pos.ev;
+    if (ply > 60) return stand;
+    if (stand >= beta) return stand;
+    if (stand > alpha) alpha = stand;
+    const moves = pos.gen(true), scores = orderMoves(moves, 0, ply);
+    for (let i = 0; i < moves.length; i++) {
+      const m = pickNext(moves, scores, i);
+      pos.make(m);
+      if (pos.attacked(-pos.side)) { pos.unmake(m); continue; }
+      const sc = -quiesce(-beta, -alpha, ply + 1);
+      pos.unmake(m);
+      if (aborted) return 0;
+      if (sc >= beta) return sc;
+      if (sc > alpha) alpha = sc;
+    }
+    return alpha;
+  }
+
+  function negamax(depth, alpha, beta, ply) {
+    if ((++nodes & 2047) === 0 && Date.now() > deadline) aborted = true;
+    if (aborted) return 0;
+    if (isRepeat()) return 0;
+    const check = pos.inCheck();
+    if (check) depth++;
+    if (depth <= 0) return quiesce(alpha, beta, ply);
+
+    const idx = pos.ha & TT_MASK;
+    let ttMove = 0;
+    if (ttB[idx] === pos.hb) {
+      ttMove = ttM[idx];
+      if (ttD[idx] >= depth) {
+        let s = ttS[idx];
+        if (s > MATE - 500) s -= ply; else if (s < -MATE + 500) s += ply;
+        const f = ttF[idx];
+        if (f === 1 || (f === 2 && s >= beta) || (f === 3 && s <= alpha)) return s;
+      }
+    }
+
+    // null-move pruning
+    if (!check && depth >= 3 && beta < MATE - 500 && pos.side * pos.ev >= beta) {
+      pos.side = -pos.side; pos.ha ^= ZSA; pos.hb ^= ZSB;
+      pos.histA.push(0); pos.histB.push(0);
+      const sc = -negamax(depth - 3, -beta, -beta + 1, ply + 1);
+      pos.histA.pop(); pos.histB.pop();
+      pos.side = -pos.side; pos.ha ^= ZSA; pos.hb ^= ZSB;
+      if (aborted) return 0;
+      if (sc >= beta) return sc;
+    }
+
+    const moves = pos.gen(false), scores = orderMoves(moves, ttMove, ply);
+    let best = -INF, bestMove = 0, legal = 0;
+    const alpha0 = alpha;
+    for (let i = 0; i < moves.length; i++) {
+      const m = pickNext(moves, scores, i);
+      pos.make(m);
+      if (pos.attacked(-pos.side)) { pos.unmake(m); continue; }
+      legal++;
+      let sc;
+      if (legal === 1) sc = -negamax(depth - 1, -beta, -alpha, ply + 1);
+      else {
+        sc = -negamax(depth - 1, -alpha - 1, -alpha, ply + 1);
+        if (sc > alpha && sc < beta) sc = -negamax(depth - 1, -beta, -alpha, ply + 1);
+      }
+      pos.unmake(m);
+      if (aborted) return 0;
+      if (sc > best) {
+        best = sc; bestMove = m;
+        if (sc > alpha) {
+          alpha = sc;
+          if (alpha >= beta) {
+            if (!pos.b[m & 127]) {
+              const k = killers[ply] || (killers[ply] = [0, 0]);
+              if (k[0] !== m) { k[1] = k[0]; k[0] = m; }
+              history[m] += depth * depth;
+            }
+            break;
+          }
+        }
+      }
+    }
+    if (!legal) return -MATE + ply; // checkmate or stalemate both lose in xiangqi
+
+    let st = best;
+    if (st > MATE - 500) st += ply; else if (st < -MATE + 500) st -= ply;
+    ttB[idx] = pos.hb; ttM[idx] = bestMove; ttS[idx] = st; ttD[idx] = depth;
+    ttF[idx] = best <= alpha0 ? 3 : best >= beta ? 2 : 1;
+    return best;
+  }
+
+  // returns best move for the side to move in `p`
+  function think(p, level) {
+    pos = p;
+    const cfg = [null, { time: 250, depth: 2, noise: 60 }, { time: 900, depth: 5, noise: 8 }, { time: 2500, depth: 30, noise: 0 }][level];
+    const root = pos.legal();
+    if (!root.length) return 0;
+    if (root.length === 1) return root[0];
+    history.fill(0); killers = []; nodes = 0; aborted = false;
+    deadline = Date.now() + cfg.time;
+    const noise = root.map(() => (Math.random() * 2 - 1) * cfg.noise);
+    let order = root.map((m, i) => ({ m, n: noise[i], s: 0 }));
+    let bestMove = root[0];
+    for (let d = 1; d <= cfg.depth; d++) {
+      let alpha = -INF, iterBest = null;
+      for (const o of order) {
+        pos.make(o.m);
+        // a raw score must beat `lo` to possibly overtake the best (noise included)
+        const lo = alpha - cfg.noise;
+        let sc;
+        if (!iterBest) sc = -negamax(d - 1, -INF, INF, 1);
+        else if (cfg.noise) sc = -negamax(d - 1, -INF, -lo, 1);
+        else {
+          sc = -negamax(d - 1, -lo - 1, -lo, 1);
+          if (sc > lo) sc = -negamax(d - 1, -INF, -lo, 1);
+        }
+        pos.unmake(o.m);
+        if (aborted) break;
+        o.s = sc + o.n;
+        if (!iterBest || o.s > alpha) { alpha = o.s; iterBest = o; }
+      }
+      if (aborted) { if (iterBest) bestMove = iterBest.m; break; }
+      bestMove = iterBest.m;
+      order.sort((a, b) => b.s - a.s);
+      if (alpha > MATE - 500) break;
+      if (Date.now() > deadline - cfg.time * 0.45) break; // next iteration would not finish
+    }
+    return bestMove;
+  }
+
+  // ---------- notation (中文記譜) ----------
+  const CN = ['', '一', '二', '三', '四', '五', '六', '七', '八', '九'];
+  const FW = ['', '１', '２', '３', '４', '５', '６', '７', '８', '９'];
+  function notate(b, m) {
+    const f = m >> 7, t = m & 127, p = b[f], side = p > 0 ? 1 : -1, type = Math.abs(p);
+    const fr = (f / 9) | 0, fc = f % 9, tr = (t / 9) | 0, tc = t % 9;
+    const col = c => side > 0 ? 9 - c : c + 1;
+    const num = n => side > 0 ? CN[n] : FW[n];
+    const rows = [];
+    for (let r = 0; r < 10; r++) if (b[r * 9 + fc] === p) rows.push(r);
+    let head = NAME[p] + num(col(fc));
+    if (rows.length > 1) {
+      rows.sort((x, y) => side > 0 ? x - y : y - x); // front first
+      const i = rows.indexOf(fr);
+      const labels = rows.length === 2 ? ['前', '後'] : rows.length === 3 ? ['前', '中', '後'] : ['一', '二', '三', '四', '五'];
+      head = labels[i] + NAME[p];
+    }
+    if (tr === fr) return head + '平' + num(col(tc));
+    const fwd = side > 0 ? fr - tr : tr - fr;
+    const act = fwd > 0 ? '進' : '退';
+    return head + act + (type === N || type === B || type === A ? num(col(tc)) : num(Math.abs(fwd)));
+  }
+
+  // ================= game & UI =================
+  const canvas = document.getElementById('board');
+  const ctx = canvas.getContext('2d');
+  const wrap = document.getElementById('wrap');
+  const statusEl = document.getElementById('status');
+  const hintEl = document.getElementById('hint');
+  const scoreEl = document.getElementById('score');
+  const undoBtn = document.getElementById('undo');
+
+  let S;          // persisted: moves, mode, level, human, flip, wins
+  let G;          // live Pos
+  let legalNow = [];
+  let selected = -1;
+  let result = null;   // { winner: 1 | -1 | 0, reason }
+  let aiTimer = null, thinking = false;
+  let anim = null;
+  let size = { w: 0, h: 0 }, cell = 0, margin = 0;
+
+  function freshState(prev) {
+    return {
+      moves: [],
+      mode: prev?.mode ?? 'ai',
+      level: prev?.level ?? 2,
+      human: prev?.human ?? RED,
+      flip: prev?.flip ?? false,
+      wins: prev?.wins ?? { r: 0, b: 0, d: 0 },
+      scored: false,
+    };
+  }
+  function save() { try { localStorage.setItem('xiangqi-state', JSON.stringify(S)); } catch (e) {} }
+  function load() {
+    try {
+      const s = JSON.parse(localStorage.getItem('xiangqi-state'));
+      if (s && Array.isArray(s.moves)) return s;
+    } catch (e) {}
+    return null;
+  }
+
+  // rebuild the live position by replaying the move list
+  function rebuild() {
+    G = new Pos(parseFen(INIT_FEN), RED);
+    const ok = [];
+    for (const m of S.moves) {
+      if (!G.legal().includes(m)) break;
+      G.make(m); ok.push(m);
+    }
+    S.moves = ok;
+    afterPositionChange(false);
+  }
+
+  function lastIrreversible() {
+    // plies since last capture
+    let n = 0;
+    for (let i = G.caps.length - 1; i >= 0 && !G.caps[i]; i--) n++;
+    return n;
+  }
+
+  function afterPositionChange(scoreIt) {
+    legalNow = G.legal();
+    result = null;
+    if (!legalNow.length) {
+      result = { winner: -G.side, reason: G.inCheck() ? '絕殺' : '困斃' };
+    } else {
+      let reps = 1;
+      for (let i = G.histA.length - 2; i >= 0; i -= 2) if (G.histA[i] === G.ha && G.histB[i] === G.hb) reps++;
+      if (reps >= 3) result = { winner: 0, reason: '重複局面' };
+      else if (lastIrreversible() >= 120) result = { winner: 0, reason: '六十回合未吃子' };
+      else if (!hasAttackers()) result = { winner: 0, reason: '雙方無攻擊子力' };
+    }
+    if (result && scoreIt && !S.scored) {
+      S.wins[result.winner > 0 ? 'r' : result.winner < 0 ? 'b' : 'd']++;
+      S.scored = true;
+    }
+  }
+  function hasAttackers() {
+    for (const p of G.b) { const t = Math.abs(p); if (t === N || t === R || t === C || t === P) return true; }
+    return false;
+  }
+
+  const aiTurn = () => S.mode === 'ai' && G.side !== S.human && !result;
+  const flipped = () => S.mode === 'ai' ? S.human === BLACK : S.flip;
+
+  function play(m) {
+    const from = m >> 7, to = m & 127;
+    const note = notate(G.b, m);
+    anim = { piece: G.b[from], from, to, t0: performance.now() };
+    G.make(m);
+    S.moves.push(m);
+    lastNote = note;
+    selected = -1;
+    afterPositionChange(true);
+    vibrate(G.caps[G.caps.length - 1] ? 25 : 12);
+    save();
+    updateUI();
+    loop();
+    maybeAI();
+  }
+  let lastNote = '';
+
+  function maybeAI() {
+    clearTimeout(aiTimer);
+    if (!aiTurn()) return;
+    thinking = true; updateUI();
+    aiTimer = setTimeout(() => {
+      const copy = new Pos(G.b, G.side);
+      copy.histA = G.histA.slice(); copy.histB = G.histB.slice();
+      const m = think(copy, S.level);
+      thinking = false;
+      if (m && aiTurn()) play(m); else updateUI();
+    }, 260);
+  }
+
+  function undo() {
+    clearTimeout(aiTimer); thinking = false;
+    if (!S.moves.length) return;
+    if (result && S.scored) {
+      S.wins[result.winner > 0 ? 'r' : result.winner < 0 ? 'b' : 'd']--;
+      S.scored = false;
+    }
+    let n = 1;
+    if (S.mode === 'ai') {
+      // back to the human's turn
+      n = G.side === S.human ? 2 : 1;
+      if (n > S.moves.length) n = S.moves.length;
+    }
+    S.moves.splice(S.moves.length - n, n);
+    selected = -1; anim = null;
+    rebuild();
+    lastNote = S.moves.length ? noteOf(S.moves.length - 1) : '';
+    save(); updateUI(); render(); maybeAI();
+  }
+  function noteOf(i) {
+    const p = new Pos(parseFen(INIT_FEN), RED);
+    for (let j = 0; j < i; j++) p.make(S.moves[j]);
+    return notate(p.b, S.moves[i]);
+  }
+
+  function restart() {
+    clearTimeout(aiTimer); thinking = false;
+    S = freshState(S);
+    selected = -1; anim = null; lastNote = '';
+    rebuild();
+    save(); updateUI(); render(); maybeAI();
+  }
+
+  // ---------- drawing ----------
+  function resize() {
+    const W = wrap.clientWidth, H = wrap.clientHeight;
+    if (!W || !H) return;
+    cell = Math.floor(Math.min(W / 9.1, H / 10.1));
+    margin = cell * 0.55;
+    size.w = Math.round(cell * 8 + margin * 2);
+    size.h = Math.round(cell * 9 + margin * 2);
+    const dpr = window.devicePixelRatio || 1;
+    canvas.width = size.w * dpr; canvas.height = size.h * dpr;
+    canvas.style.width = size.w + 'px'; canvas.style.height = size.h + 'px';
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    render();
+  }
+  const X = c => margin + (flipped() ? 8 - c : c) * cell;
+  const Y = r => margin + (flipped() ? 9 - r : r) * cell;
+
+  function drawBoard() {
+    const g = ctx.createLinearGradient(0, 0, size.w, size.h);
+    g.addColorStop(0, '#e7c286'); g.addColorStop(1, '#cf9d58');
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, size.w, size.h);
+    // faint grain
+    ctx.globalAlpha = 0.07; ctx.strokeStyle = '#6b4219'; ctx.lineWidth = 1;
+    for (let i = 0; i < 26; i++) {
+      const y = (i + 0.5) * size.h / 26;
+      ctx.beginPath(); ctx.moveTo(0, y);
+      ctx.bezierCurveTo(size.w * 0.3, y + 6 * Math.sin(i), size.w * 0.7, y - 6 * Math.cos(i * 1.3), size.w, y + 3);
+      ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+
+    const x0 = margin, y0 = margin, x1 = margin + 8 * cell, y1 = margin + 9 * cell;
+    ctx.strokeStyle = '#4a3418';
+    ctx.lineWidth = Math.max(2, cell * 0.06);
+    const o = cell * 0.12;
+    ctx.strokeRect(x0 - o, y0 - o, x1 - x0 + 2 * o, y1 - y0 + 2 * o);
+    ctx.lineWidth = Math.max(1, cell * 0.025);
+    ctx.beginPath();
+    for (let r = 0; r < 10; r++) { ctx.moveTo(x0, y0 + r * cell); ctx.lineTo(x1, y0 + r * cell); }
+    for (let c = 0; c < 9; c++) {
+      const x = x0 + c * cell;
+      if (c === 0 || c === 8) { ctx.moveTo(x, y0); ctx.lineTo(x, y1); }
+      else { ctx.moveTo(x, y0); ctx.lineTo(x, y0 + 4 * cell); ctx.moveTo(x, y0 + 5 * cell); ctx.lineTo(x, y1); }
+    }
+    // palaces
+    for (const top of [0, 7]) {
+      ctx.moveTo(x0 + 3 * cell, y0 + top * cell); ctx.lineTo(x0 + 5 * cell, y0 + (top + 2) * cell);
+      ctx.moveTo(x0 + 5 * cell, y0 + top * cell); ctx.lineTo(x0 + 3 * cell, y0 + (top + 2) * cell);
+    }
+    ctx.stroke();
+    // position marks for cannons & pawns
+    const marks = [[2, 1], [2, 7], [7, 1], [7, 7]];
+    for (const c of [0, 2, 4, 6, 8]) marks.push([3, c], [6, c]);
+    const g1 = cell * 0.08, g2 = cell * 0.2;
+    ctx.beginPath();
+    for (const [r, c] of marks) {
+      const x = x0 + c * cell, y = y0 + r * cell;
+      for (const sx of [-1, 1]) {
+        if ((c === 0 && sx < 0) || (c === 8 && sx > 0)) continue;
+        for (const sy of [-1, 1]) {
+          ctx.moveTo(x + sx * g1, y + sy * (g1 + g2));
+          ctx.lineTo(x + sx * g1, y + sy * g1);
+          ctx.lineTo(x + sx * (g1 + g2), y + sy * g1);
+        }
+      }
+    }
+    ctx.stroke();
+    // river
+    ctx.fillStyle = 'rgba(74,52,24,.78)';
+    ctx.font = `700 ${cell * 0.52}px ${getComputedStyle(document.documentElement).getPropertyValue('--font-display')}`;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    const ry = y0 + 4.5 * cell;
+    ctx.fillText('楚', x0 + 1.5 * cell, ry); ctx.fillText('河', x0 + 2.5 * cell, ry);
+    ctx.fillText('漢', x0 + 5.5 * cell, ry); ctx.fillText('界', x0 + 6.5 * cell, ry);
+  }
+
+  function drawPiece(x, y, p, opts = {}) {
+    const rad = cell * 0.445;
+    const red = p > 0;
+    ctx.save();
+    if (opts.lift) { y -= cell * 0.06; }
+    ctx.shadowColor = 'rgba(40,20,5,.45)';
+    ctx.shadowBlur = opts.lift ? cell * 0.28 : cell * 0.1;
+    ctx.shadowOffsetY = opts.lift ? cell * 0.12 : cell * 0.05;
+    const g = ctx.createRadialGradient(x - rad * 0.35, y - rad * 0.4, rad * 0.1, x, y, rad);
+    g.addColorStop(0, '#fff6e2'); g.addColorStop(0.7, '#f0d9a8'); g.addColorStop(1, '#d4ad6c');
+    ctx.fillStyle = g;
+    ctx.beginPath(); ctx.arc(x, y, rad, 0, Math.PI * 2); ctx.fill();
+    ctx.shadowColor = 'transparent';
+    ctx.lineWidth = Math.max(1, cell * 0.035);
+    ctx.strokeStyle = '#8a6334';
+    ctx.stroke();
+    const ink = red ? '#b5291c' : '#1d1d1d';
+    ctx.strokeStyle = ink;
+    ctx.lineWidth = Math.max(1, cell * 0.03);
+    ctx.beginPath(); ctx.arc(x, y, rad * 0.8, 0, Math.PI * 2); ctx.stroke();
+    ctx.fillStyle = ink;
+    ctx.font = `700 ${cell * 0.52}px ${getComputedStyle(document.documentElement).getPropertyValue('--font-display')}`;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(NAME[p], x, y + cell * 0.02);
+    if (opts.ring) {
+      ctx.strokeStyle = opts.ring; ctx.lineWidth = Math.max(2, cell * 0.07);
+      ctx.beginPath(); ctx.arc(x, y, rad + cell * 0.04, 0, Math.PI * 2); ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  function corners(x, y, color) {
+    const h = cell * 0.46, l = cell * 0.14;
+    ctx.strokeStyle = color; ctx.lineWidth = Math.max(2, cell * 0.05);
+    ctx.beginPath();
+    for (const sx of [-1, 1]) for (const sy of [-1, 1]) {
+      ctx.moveTo(x + sx * h, y + sy * (h - l)); ctx.lineTo(x + sx * h, y + sy * h); ctx.lineTo(x + sx * (h - l), y + sy * h);
+    }
+    ctx.stroke();
+  }
+
+  function render() {
+    if (!cell || !G) return;
+    ctx.clearRect(0, 0, size.w, size.h);
+    drawBoard();
+    const last = S.moves.length ? S.moves[S.moves.length - 1] : 0;
+    if (last) {
+      const f = last >> 7;
+      corners(X(f % 9), Y((f / 9) | 0), 'rgba(163,54,31,.75)');
+    }
+    const checkK = !result || result.reason === '絕殺' ? (G.inCheck() ? G.kp[G.side] : -1) : -1;
+    let animP = 0, ax = 0, ay = 0;
+    if (anim) {
+      const k = Math.min(1, (performance.now() - anim.t0) / 180), e = 1 - (1 - k) * (1 - k);
+      const fx = X(anim.from % 9), fy = Y((anim.from / 9) | 0), tx = X(anim.to % 9), ty = Y((anim.to / 9) | 0);
+      ax = fx + (tx - fx) * e; ay = fy + (ty - fy) * e; animP = anim.piece;
+      if (k >= 1) anim = null;
+    }
+    for (let s = 0; s < 90; s++) {
+      const p = G.b[s];
+      if (!p || s === selected || (animP && s === anim?.to)) continue;
+      const opts = {};
+      if (s === checkK) opts.ring = '#e0321c';
+      else if (last && s === (last & 127)) opts.ring = 'rgba(163,54,31,.6)';
+      drawPiece(X(s % 9), Y((s / 9) | 0), p, opts);
+    }
+    if (selected >= 0) {
+      for (const m of legalNow) {
+        if (m >> 7 !== selected) continue;
+        const t = m & 127, x = X(t % 9), y = Y((t / 9) | 0);
+        if (G.b[t]) continue;
+        ctx.fillStyle = 'rgba(30,110,60,.75)';
+        ctx.beginPath(); ctx.arc(x, y, cell * 0.13, 0, Math.PI * 2); ctx.fill();
+      }
+      drawPiece(X(selected % 9), Y((selected / 9) | 0), G.b[selected], { lift: true, ring: '#1e6e3c' });
+      for (const m of legalNow) {
+        if (m >> 7 !== selected) continue;
+        const t = m & 127;
+        if (!G.b[t]) continue;
+        const x = X(t % 9), y = Y((t / 9) | 0);
+        ctx.strokeStyle = 'rgba(30,110,60,.9)'; ctx.lineWidth = Math.max(2, cell * 0.08);
+        ctx.setLineDash([cell * 0.12, cell * 0.08]);
+        ctx.beginPath(); ctx.arc(x, y, cell * 0.49, 0, Math.PI * 2); ctx.stroke();
+        ctx.setLineDash([]);
+      }
+    }
+    if (animP) drawPiece(ax, ay, animP, { lift: true });
+  }
+  function loop() {
+    render();
+    if (anim) requestAnimationFrame(loop);
+  }
+
+  // ---------- input ----------
+  canvas.addEventListener('pointerup', e => {
+    if (result || thinking || aiTurn()) return;
+    const rect = canvas.getBoundingClientRect();
+    let c = Math.round((e.clientX - rect.left - margin) / cell);
+    let r = Math.round((e.clientY - rect.top - margin) / cell);
+    if (flipped()) { c = 8 - c; r = 9 - r; }
+    if (!onBoard(r, c)) { selected = -1; render(); return; }
+    const s = r * 9 + c, p = G.b[s];
+    if (selected >= 0) {
+      const m = legalNow.find(m => m >> 7 === selected && (m & 127) === s);
+      if (m !== undefined) { play(m); return; }
+    }
+    if (p && (p > 0) === (G.side > 0)) {
+      selected = selected === s ? -1 : s;
+      vibrate(5);
+    } else selected = -1;
+    updateUI(); render();
+  });
+
+  function vibrate(ms) { try { navigator.vibrate && navigator.vibrate(ms); } catch (e) {} }
+
+  // ---------- chrome ----------
+  const sideIcon = side => `<span class="side-icon ${side > 0 ? 'r' : 'b'}"></span>`;
+  const sideName = side => side > 0 ? '紅方' : '黑方';
+  function updateUI() {
+    for (const b of document.querySelectorAll('[data-mode]')) b.setAttribute('aria-pressed', String(b.dataset.mode === S.mode));
+    for (const b of document.querySelectorAll('[data-level]')) b.setAttribute('aria-pressed', String(+b.dataset.level === S.level));
+    document.getElementById('level-seg').hidden = S.mode !== 'ai';
+    document.getElementById('swap').textContent = S.mode === 'ai' ? (S.human === RED ? '改執黑' : '改執紅') : '翻轉';
+
+    if (result) {
+      statusEl.innerHTML = result.winner
+        ? `${sideIcon(result.winner)}<span class="win">${S.mode === 'ai' ? (result.winner === S.human ? '你贏了' : '電腦勝') : sideName(result.winner) + '勝'}</span>`
+        : `<span class="win">和棋</span>`;
+    } else if (thinking) {
+      statusEl.innerHTML = `${sideIcon(G.side)}<span>電腦思考中…</span>`;
+    } else {
+      statusEl.innerHTML = `${sideIcon(G.side)}<span>${S.mode === 'ai' ? '輪到你' : sideName(G.side) + '走'}</span>`;
+    }
+
+    const round = Math.floor(S.moves.length / 2) + 1;
+    let hint;
+    if (result) hint = `<b>${result.reason}</b>${lastNote ? '　最後一步：' + lastNote : ''}`;
+    else if (G.inCheck()) hint = `<b>將軍！</b>　${lastNote}`;
+    else if (lastNote) hint = `第 ${round} 回合　上一步：${lastNote}`;
+    else hint = S.mode === 'ai' && S.human === BLACK ? '電腦執紅先走' : '點選棋子，再點綠點走棋';
+    hintEl.innerHTML = hint;
+
+    undoBtn.disabled = !S.moves.length || (S.mode === 'ai' && S.moves.length === 1 && S.human === BLACK);
+    const w = S.wins;
+    scoreEl.innerHTML = S.mode === 'ai'
+      ? `<span>你 ${S.human === RED ? w.r : w.b} 勝</span><span>電腦 ${S.human === RED ? w.b : w.r} 勝</span><span>和 ${w.d}</span>`
+      : `<span>${sideIcon(RED)}紅 ${w.r} 勝</span><span>${sideIcon(BLACK)}黑 ${w.b} 勝</span><span>和 ${w.d}</span>`;
+  }
+
+  undoBtn.addEventListener('click', undo);
+  document.getElementById('restart').addEventListener('click', restart);
+  document.getElementById('swap').addEventListener('click', () => {
+    if (S.mode === 'ai') {
+      S.human = -S.human;
+      S.wins = { r: S.wins.b, b: S.wins.r, d: S.wins.d }; // keep "you vs computer" tally stable
+      restart();
+    } else {
+      S.flip = !S.flip; save(); render();
+    }
+  });
+  for (const b of document.querySelectorAll('[data-mode]')) b.addEventListener('click', () => {
+    if (S.mode === b.dataset.mode) return;
+    S.mode = b.dataset.mode; S.wins = { r: 0, b: 0, d: 0 };
+    restart();
+  });
+  for (const b of document.querySelectorAll('[data-level]')) b.addEventListener('click', () => {
+    S.level = +b.dataset.level; save(); updateUI();
+  });
+
+  new ResizeObserver(resize).observe(wrap);
+  document.fonts?.ready?.then(render);
+  // the menu page only exists on the published site or a local copy
+  if (/github\.io$|^localhost$|^127\./.test(location.hostname) || location.protocol === 'file:') document.getElementById('home').hidden = false;
+
+  function start(data) {
+    S = data && data.state ? data.state : (load() || freshState());
+    rebuild();
+    lastNote = S.moves.length ? noteOf(S.moves.length - 1) : '';
+    updateUI();
+    resize();
+    maybeAI();
+  }
+  window.claude?.hot?.snapshot?.(() => ({ state: S }));
+  window.claude?.hot?.ready ? window.claude.hot.ready(start) : start(window.claude?.hot?.data ?? {});
+  window.__xq = { Pos, parseFen, INIT_FEN, think, notate }; // for testing
+})();
+</script>
+</body>
+</html>
