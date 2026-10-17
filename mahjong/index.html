@@ -1,0 +1,1126 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<title>台灣麻將</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=LXGW+WenKai+TC:wght@400;700&display=swap">
+<style>
+/* Layout: one-screen table — name + round status, setting pills, three opponent seats (上家・對家・下家),
+   a centre strip for the latest discard, then your pond, melds, hand and a thumb-reach action bar. */
+:root {
+  --bg: #e9e4da;
+  --surface: #f6f2ea;
+  --ink: #2a241c;
+  --muted: #7a6d5c;
+  --line: #cfc5b4;
+  --accent: #a3361f;
+  --felt: #2f6b55;
+  --face: #f8f4ea;
+  --tile-edge: #2f7a5b;
+  --font-display: "LXGW WenKai TC", "Kaiti TC", "STKaiti", "BiauKai", serif;
+  --font-body: -apple-system, BlinkMacSystemFont, "PingFang TC", "Noto Sans TC", "Microsoft JhengHei", sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #1b1814; --surface: #26221c; --ink: #efe7da; --muted: #a59784;
+    --line: #3d362c; --accent: #e0644a; --felt: #24493b; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #1b1814; --surface: #26221c; --ink: #efe7da; --muted: #a59784;
+  --line: #3d362c; --accent: #e0644a; --felt: #24493b; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html, body { height: 100%; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-body);
+  font-size: 15px;
+  -webkit-tap-highlight-color: transparent;
+  overscroll-behavior: none;
+}
+.app {
+  min-height: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: 640px;
+  margin: 0 auto;
+  padding-block: 12px max(10px, env(safe-area-inset-bottom, 0px));
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+h1 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 26px;
+  letter-spacing: 0.06em;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+}
+.brand { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.home {
+  display: inline-grid;
+  place-items: center;
+  width: 36px; height: 36px;
+  flex: none;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  background: var(--surface);
+  color: var(--ink);
+  text-decoration: none;
+  font-size: 22px;
+  line-height: 1;
+  padding-bottom: 2px;
+}
+.home:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.seal {
+  display: inline-grid;
+  place-items: center;
+  width: 28px; height: 28px;
+  border: 2px solid var(--accent);
+  border-radius: 4px;
+  color: var(--accent);
+  font-size: 16px;
+  line-height: 1;
+  transform: rotate(-4deg);
+}
+.status {
+  font-family: var(--font-display);
+  font-size: 16px;
+  text-align: right;
+  white-space: nowrap;
+}
+.status small { display: block; font-family: var(--font-body); font-size: 12px; color: var(--muted); }
+
+.modes { display: flex; gap: 8px; flex-wrap: wrap; justify-content: space-between; }
+.seg, .pill {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface);
+}
+.seg { display: inline-flex; padding: 3px; }
+.seg button, .pill {
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 14px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  cursor: pointer;
+}
+.pill { border: 1px solid var(--line); background: var(--surface); padding: 7px 12px; }
+.seg button[aria-pressed="true"], .pill[aria-pressed="true"] { background: var(--ink); color: var(--bg); }
+.tools { display: flex; gap: 6px; }
+
+/* ---------- tiles ---------- */
+.t {
+  --w: inherit;
+  width: var(--w);
+  height: calc(var(--w) * 1.36);
+  flex: none;
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: calc(var(--w) * .04);
+  margin: 0 0 calc(var(--w) * .1);
+  padding: 0;
+  border: 0;
+  border-radius: calc(var(--w) * .14);
+  background: var(--face);
+  box-shadow: inset 0 -1px 0 rgba(0,0,0,.08), 0 calc(var(--w) * .1) 0 var(--tile-edge), 0 calc(var(--w) * .1 + 1px) 2px rgba(0,0,0,.35);
+  font-family: var(--font-display);
+  font-size: var(--w);
+  line-height: 1;
+  color: #1d1d1d;
+  -webkit-user-select: none;
+  user-select: none;
+}
+.t b { font-size: .5em; font-weight: 700; }
+.t i { font-style: normal; font-size: .38em; font-weight: 700; }
+.t .one { font-size: .66em; }
+.s0 b { color: #1d1d1d; } .s0 i { color: #b3261e; }
+.s1 b, .s1 i { color: #1f5fae; }
+.s2 b, .s2 i { color: #1f7a45; }
+.zh .one { color: #c0261b; }
+.fa .one { color: #1f7a45; }
+.bai u { display: block; width: .46em; height: .64em; border: max(1px, .07em) solid #1f5fae; border-radius: .05em; }
+.fl .one { color: #8a4fc7; font-size: .5em; }
+.fl i { color: #b4651b; }
+.t.back { background: linear-gradient(160deg, #46a982, var(--tile-edge)); box-shadow: 0 calc(var(--w) * .1) 0 #1d5a41, 0 calc(var(--w) * .1 + 1px) 2px rgba(0,0,0,.35); }
+.t.last { outline: 2px solid var(--accent); outline-offset: 1px; }
+.t.win { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+.tiles, .pond { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 2px 1px; }
+.meld { display: inline-flex; gap: 1px; margin-right: 4px; }
+.cnt { display: inline-flex; align-items: center; gap: 3px; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+
+/* ---------- seats ---------- */
+.opps { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+.seat {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+  --w: 16px;
+}
+.seat.now { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+.seat .pond { --w: 17px; }
+.who { display: flex; align-items: center; gap: 4px; font-size: 13px; white-space: nowrap; min-width: 0; }
+.who .pts { margin-left: auto; color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+.wind {
+  display: inline-grid; place-items: center;
+  width: 18px; height: 18px; flex: none;
+  border-radius: 4px;
+  background: var(--ink); color: var(--bg);
+  font-family: var(--font-display); font-size: 12px; line-height: 1;
+}
+.wind.dealer { background: var(--accent); color: #fff; }
+.tag { font-size: 11px; color: var(--accent); }
+
+.center {
+  flex: 1 1 auto;
+  min-height: 64px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  border-radius: 12px;
+  background: var(--felt);
+  color: #f3efe4;
+  font-family: var(--font-display);
+  font-size: 17px;
+  padding: 8px 12px;
+  --w: 34px;
+}
+.center .say { text-align: center; }
+.center small { display: block; font-family: var(--font-body); font-size: 12px; opacity: .75; margin-top: 2px; }
+
+.me { display: flex; flex-direction: column; gap: 6px; }
+.me .pond { --w: 17px; min-height: 26px; }
+.me-row { display: flex; align-items: flex-end; gap: 6px; flex-wrap: wrap; --w: 21px; }
+.me-row .who { margin-right: 4px; }
+.hand { display: flex; justify-content: center; align-items: flex-end; gap: 2px; padding-top: 12px; min-height: 70px; }
+.hand .t { cursor: pointer; transition: transform .12s ease; }
+.hand .t.drawn { margin-left: calc(var(--w) * .4); }
+.hand .t.sel { transform: translateY(-28%); }
+.hand.wait .t { cursor: default; }
+.hand .t:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.hint { text-align: center; color: var(--muted); font-size: 13px; min-height: 1.3em; margin: 0; }
+.acts { min-height: 50px; display: flex; gap: 8px; justify-content: center; align-items: center; flex-wrap: wrap; }
+.acts button {
+  font: inherit;
+  font-family: var(--font-display);
+  font-size: 18px;
+  padding: 10px 18px;
+  min-height: 46px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--ink);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  --w: 18px;
+}
+.acts .hot { background: var(--accent); border-color: var(--accent); color: #fff; }
+.acts .go { background: var(--ink); border-color: var(--ink); color: var(--bg); }
+button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* ---------- result sheet ---------- */
+.sheet {
+  position: fixed; inset: 0;
+  display: grid; place-items: end center;
+  background: rgba(20, 14, 6, .45);
+  padding: 16px max(16px, env(safe-area-inset-right, 0px)) max(16px, env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px));
+  z-index: 10;
+}
+.card {
+  width: 100%; max-width: 460px;
+  max-height: 100%; overflow: auto;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  padding: 18px 16px 16px;
+  display: flex; flex-direction: column; gap: 12px;
+}
+.card h2 { margin: 0; font-family: var(--font-display); font-size: 26px; }
+.card h2 em { font-style: normal; color: var(--accent); }
+.card .sub { margin: -6px 0 0; color: var(--muted); font-size: 14px; }
+.card .tiles { --w: 22px; }
+.card ul { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px 16px; }
+.card li { display: flex; justify-content: space-between; border-bottom: 1px dashed var(--line); padding: 3px 0; font-size: 14px; }
+.card li b { font-variant-numeric: tabular-nums; }
+.card .total { font-family: var(--font-display); font-size: 18px; display: flex; justify-content: space-between; align-items: baseline; }
+.card .total b { color: var(--accent); font-size: 22px; }
+.card table { width: 100%; border-collapse: collapse; font-size: 14px; font-variant-numeric: tabular-nums; }
+.card td { padding: 5px 0; border-bottom: 1px solid var(--line); }
+.card td:not(:first-child) { text-align: right; }
+.card .up { color: #2e8a4f; } .card .down { color: var(--accent); }
+.card .note { margin: 0; color: var(--muted); font-size: 12px; }
+.card .primary {
+  font: inherit; font-family: var(--font-display); font-size: 18px;
+  padding: 12px; border-radius: 10px; cursor: pointer;
+  background: var(--accent); border: 1px solid var(--accent); color: #fff;
+}
+.card .rules { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.card h3 { margin: 4px 0 0; font-size: 14px; color: var(--muted); font-weight: 600; }
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <div class="brand">
+      <a class="home" id="home" href="../index.html" aria-label="回首頁" hidden>‹</a>
+      <h1><span class="seal">雀</span>麻將</h1>
+    </div>
+    <div class="status" id="status" aria-live="polite"></div>
+  </header>
+
+  <div class="modes">
+    <div class="seg" role="group" aria-label="局數">
+      <button data-len="1" aria-pressed="true">一圈</button>
+      <button data-len="4" aria-pressed="false">一將</button>
+    </div>
+    <div class="tools">
+      <button class="pill" id="auto" aria-pressed="false">託管</button>
+      <button class="pill" id="rules-btn">台數</button>
+      <button class="pill" id="restart">新局</button>
+    </div>
+  </div>
+
+  <div class="opps" id="opps"></div>
+  <div class="center" id="center" aria-live="polite"></div>
+
+  <section class="me">
+    <div class="pond" id="mypond" aria-label="你的河"></div>
+    <div class="me-row" id="mine"></div>
+    <div class="hand" id="hand" aria-label="手牌"></div>
+    <p class="hint" id="hint"></p>
+    <div class="acts" id="acts"></div>
+  </section>
+</div>
+
+<div class="sheet" id="sheet" hidden><div class="card" id="card" role="dialog" aria-modal="true"></div></div>
+
+<div class="sheet" id="rules" hidden>
+  <div class="card" role="dialog" aria-modal="true" aria-labelledby="rules-title">
+    <h2 id="rules-title">台數表</h2>
+    <p class="sub">十六張麻將，五組面子加一對眼胡牌。每台 100，底 300；自摸三家都付。</p>
+    <ul class="rules">
+      <li><span>莊家</span><b>1</b></li><li><span>連 N 拉 N</span><b>2N</b></li><li><span>門清</span><b>1</b></li>
+      <li><span>自摸</span><b>1</b></li><li><span>門清自摸</span><b>3</b></li><li><span>獨聽</span><b>1</b></li>
+      <li><span>三元牌刻</span><b>1</b></li><li><span>圈風／門風刻</span><b>1</b></li><li><span>正花</span><b>1</b></li>
+      <li><span>花槓</span><b>2</b></li><li><span>平胡</span><b>2</b></li><li><span>全求人</span><b>2</b></li>
+      <li><span>三暗刻</span><b>2</b></li><li><span>四暗刻</span><b>5</b></li><li><span>五暗刻</span><b>8</b></li>
+      <li><span>碰碰胡</span><b>4</b></li><li><span>混一色</span><b>4</b></li><li><span>清一色</span><b>8</b></li>
+      <li><span>小三元</span><b>4</b></li><li><span>大三元</span><b>8</b></li><li><span>小四喜</span><b>8</b></li>
+      <li><span>大四喜</span><b>16</b></li><li><span>字一色</span><b>16</b></li><li><span>天胡</span><b>24</b></li>
+      <li><span>槓上開花</span><b>1</b></li><li><span>海底撈月</span><b>1</b></li><li><span>河底撈魚</span><b>1</b></li>
+      <li><span>搶槓</span><b>1</b></li>
+    </ul>
+    <p class="note">吃只能吃上家；胡＞碰、槓＞吃，同時胡由下手最近者截胡。牌牆留 16 張不摸，摸完流局、莊家連莊。</p>
+    <button class="primary" id="rules-close">知道了</button>
+  </div>
+</div>
+
+<script>
+(() => {
+  // ---------- tiles: 0-8 萬, 9-17 筒, 18-26 條, 27-30 東南西北, 31-33 中發白, 34-41 春夏秋冬梅蘭竹菊 ----------
+  const NUM = '一二三四五六七八九';
+  const SUIT = '萬筒條';
+  const HON = '東南西北中發白';
+  const FLW = '春夏秋冬梅蘭竹菊';
+  const SEAT = ['你', '下家', '對家', '上家'];
+  const BASE = 300, PER = 100;
+  const KEEP = 16;           // tiles left in the wall when the hand is a draw
+  const FAST = location.hash === '#fast';
+
+  const tileName = t => t < 27 ? NUM[t % 9] + SUIT[(t / 9) | 0]
+    : t < 31 ? HON[t - 27] + '風' : t < 34 ? ['紅中', '青發', '白板'][t - 31] : FLW[t - 34];
+  const isFlower = t => t >= 34;
+  const byType = (a, b) => a - b;
+
+  function tile(t, cls = '', tag = 'span', attrs = '') {
+    let k, inner;
+    if (t < 0) { k = 'back'; inner = ''; }
+    else if (t < 27) { const s = (t / 9) | 0; k = 's' + s; inner = `<b>${NUM[t % 9]}</b><i>${SUIT[s]}</i>`; }
+    else if (t < 31) { k = 'wd'; inner = `<b class="one">${HON[t - 27]}</b>`; }
+    else if (t === 31) { k = 'zh'; inner = '<b class="one">中</b>'; }
+    else if (t === 32) { k = 'fa'; inner = '<b class="one">發</b>'; }
+    else if (t === 33) { k = 'bai'; inner = '<u></u>'; }
+    else { k = 'fl'; inner = `<b class="one">${FLW[t - 34]}</b><i>${(t - 34) % 4 + 1}</i>`; }
+    const label = t < 0 ? '' : ` title="${tileName(t)}" aria-label="${tileName(t)}"`;
+    return `<${tag} class="t ${k} ${cls}"${label} ${attrs}>${inner}</${tag}>`;
+  }
+
+  function counts(arr) {
+    const c = Array(34).fill(0);
+    for (const t of arr) if (t < 34) c[t]++;
+    return c;
+  }
+  function removeN(arr, t, n) {
+    for (let k = 0; k < n; k++) { const i = arr.indexOf(t); if (i >= 0) arr.splice(i, 1); }
+  }
+
+  // ---------- shanten: per-suit (sets, partial sets, head) tuples, memoised ----------
+  const memo = new Map();
+  function prune(list) {
+    const out = [];
+    for (const x of list) {
+      if (out.some(y => y[2] === x[2] && y[0] >= x[0] && y[1] >= x[1])) continue;
+      for (let k = out.length - 1; k >= 0; k--) {
+        const y = out[k];
+        if (y[2] === x[2] && x[0] >= y[0] && x[1] >= y[1]) out.splice(k, 1);
+      }
+      out.push(x);
+    }
+    return out;
+  }
+  function tuples(a, honor) {
+    const key = (honor ? 'h' : 's') + a.join('');
+    let r = memo.get(key);
+    if (r) return r;
+    let i = 0;
+    while (i < a.length && !a[i]) i++;
+    if (i === a.length) r = [[0, 0, 0]];
+    else {
+      const acc = [], n = a.length;
+      const add = (dm, dt, dh) => { for (const [m, t, h] of tuples(a, honor)) if (h + dh <= 1) acc.push([m + dm, t + dt, h + dh]); };
+      if (a[i] >= 3) { a[i] -= 3; add(1, 0, 0); a[i] += 3; }
+      if (!honor && i + 2 < n && a[i + 1] && a[i + 2]) { a[i]--; a[i + 1]--; a[i + 2]--; add(1, 0, 0); a[i]++; a[i + 1]++; a[i + 2]++; }
+      if (a[i] >= 2) { a[i] -= 2; add(0, 0, 1); add(0, 1, 0); a[i] += 2; }
+      if (!honor && i + 1 < n && a[i + 1]) { a[i]--; a[i + 1]--; add(0, 1, 0); a[i]++; a[i + 1]++; }
+      if (!honor && i + 2 < n && a[i + 2]) { a[i]--; a[i + 2]--; add(0, 1, 0); a[i]++; a[i + 2]++; }
+      a[i]--; add(0, 0, 0); a[i]++;
+      r = prune(acc);
+    }
+    memo.set(key, r);
+    return r;
+  }
+  // N = sets still needed. -1 means the hand is complete.
+  function shanten(c, N) {
+    let acc = [[0, 0, 0]];
+    for (let s = 0; s < 4; s++) {
+      const ts = s < 3 ? tuples(c.slice(s * 9, s * 9 + 9), false) : tuples(c.slice(27, 34), true);
+      const nx = [];
+      for (const [m1, t1, h1] of acc) for (const [m2, t2, h2] of ts) if (h1 + h2 <= 1) nx.push([m1 + m2, t1 + t2, h1 + h2]);
+      acc = prune(nx);
+    }
+    let best = 99;
+    for (const [m, t, h] of acc) {
+      const mm = Math.min(m, N), tt = Math.min(t, N - mm);
+      best = Math.min(best, 2 * (N - mm) - tt - h);
+    }
+    return best;
+  }
+  const isWin = (c, N) => shanten(c, N) === -1;
+  function waitsOf(c, N) {
+    const w = [];
+    for (let t = 0; t < 34; t++) {
+      if (c[t] >= 4) continue;
+      c[t]++;
+      if (isWin(c, N)) w.push(t);
+      c[t]--;
+    }
+    return w;
+  }
+  function decompose(c) {
+    const out = [];
+    const sets = (i, acc, pair) => {
+      while (i < 34 && !c[i]) i++;
+      if (i === 34) { out.push({ pair, groups: acc.slice() }); return; }
+      if (c[i] >= 3) { c[i] -= 3; acc.push({ k: 'p', t: i }); sets(i, acc, pair); acc.pop(); c[i] += 3; }
+      if (i < 27 && i % 9 <= 6 && c[i + 1] && c[i + 2]) {
+        c[i]--; c[i + 1]--; c[i + 2]--;
+        acc.push({ k: 'c', t: i }); sets(i, acc, pair); acc.pop();
+        c[i]++; c[i + 1]++; c[i + 2]++;
+      }
+    };
+    for (let p = 0; p < 34; p++) if (c[p] >= 2) { c[p] -= 2; sets(0, [], p); c[p] += 2; }
+    return out;
+  }
+
+  // ---------- match & hand state ----------
+  const el = id => document.getElementById(id);
+  const statusEl = el('status'), oppsEl = el('opps'), centerEl = el('center'), pondEl = el('mypond');
+  const mineEl = el('mine'), handEl = el('hand'), hintEl = el('hint'), actsEl = el('acts');
+  const sheetEl = el('sheet'), cardEl = el('card'), rulesEl = el('rules'), autoBtn = el('auto');
+
+  let M;          // match: {len, scores, dealer, streak, wind, over, auto}
+  let H = null;   // current hand
+  let UIq = null; // pending question for the human: {kind:'turn'|'claim'|'sheet', ...}
+  let selected = -1;
+  let G = 0;
+  const ABORT = Symbol('abort');
+
+  const freshMatch = (len = 1, auto = false) => ({ len, scores: [0, 0, 0, 0], dealer: 0, streak: 0, wind: 0, over: false, auto });
+  const seatWind = p => (p - M.dealer + 4) % 4;
+  const isValue = (t, p) => t >= 31 || t === 27 + M.wind || t === 27 + seatWind(p);
+  const fmt = n => (n > 0 ? '+' : n < 0 ? '−' : '') + Math.abs(n).toLocaleString('en-US');
+
+  function save() { try { localStorage.setItem('mahjong-match', JSON.stringify(M)); } catch (e) {} }
+  function load() {
+    try {
+      const m = JSON.parse(localStorage.getItem('mahjong-match') || 'null');
+      if (m && Array.isArray(m.scores) && m.scores.length === 4 && !m.over) return m;
+    } catch (e) {}
+    return null;
+  }
+
+  function sleep(ms) {
+    const g = G;
+    return new Promise(r => setTimeout(r, FAST ? 0 : ms)).then(() => { if (g !== G) throw ABORT; });
+  }
+  function ask(q) {
+    const g = G;
+    return new Promise(res => {
+      UIq = Object.assign({}, q, { resolve: res });
+      if (q.html) { cardEl.innerHTML = q.html; sheetEl.hidden = false; cardEl.querySelector('button')?.focus(); }
+      render();
+    }).then(v => {
+      UIq = null; selected = -1; sheetEl.hidden = true;
+      if (g !== G) throw ABORT;
+      return v;
+    });
+  }
+  function abort() {
+    G++;
+    if (UIq) { const r = UIq.resolve; UIq = null; r(null); }
+  }
+  function vibrate(ms) { try { navigator.vibrate && navigator.vibrate(ms); } catch (e) {} }
+
+  function setupHand() {
+    const wall = [];
+    for (let t = 0; t < 34; t++) for (let k = 0; k < 4; k++) wall.push(t);
+    for (let t = 34; t < 42; t++) wall.push(t);
+    for (let i = wall.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [wall[i], wall[j]] = [wall[j], wall[i]]; }
+    H = {
+      wall, hands: [[], [], [], []], melds: [[], [], [], []], flowers: [[], [], [], []], discards: [[], [], [], []],
+      cur: M.dealer, last: null, msg: '', sub: '', drawn: null, reveal: false
+    };
+    for (let k = 0; k < 16; k++) for (let i = 0; i < 4; i++) H.hands[(M.dealer + i) % 4].push(wall.shift());
+    H.hands[M.dealer].push(wall.shift());
+    for (let i = 0; i < 4; i++) {
+      const p = (M.dealer + i) % 4, h = H.hands[p];
+      for (;;) {
+        const k = h.findIndex(isFlower);
+        if (k < 0) break;
+        H.flowers[p].push(h.splice(k, 1)[0]);
+        h.push(wall.pop());
+      }
+      h.sort(byType);
+      H.flowers[p].sort(byType);
+    }
+  }
+
+  // draws one tile for p, replacing flowers from the back of the wall; null when the wall is spent
+  function drawFor(p, back) {
+    for (;;) {
+      if (H.wall.length <= KEEP) return null;
+      const t = back ? H.wall.pop() : H.wall.shift();
+      if (!isFlower(t)) return t;
+      H.flowers[p].push(t);
+      H.flowers[p].sort(byType);
+      back = true;
+    }
+  }
+
+  function visible(p) {
+    const v = Array(34).fill(0);
+    for (let q = 0; q < 4; q++) {
+      for (const t of H.discards[q]) v[t]++;
+      for (const m of H.melds[q]) if (m.kind !== 'ankan' || q === p) for (const t of m.tiles) v[t]++;
+    }
+    return v;
+  }
+
+  function turnOpts(p, claimed) {
+    const o = { hu: false, ankans: [], kakans: [] };
+    if (claimed) return o;
+    const c = counts(H.hands[p]);
+    o.hu = isWin(c, 5 - H.melds[p].length);
+    if (H.wall.length > KEEP) {
+      for (let t = 0; t < 34; t++) if (c[t] === 4) o.ankans.push(t);
+      for (const m of H.melds[p]) if (m.kind === 'pong' && c[m.tiles[0]]) o.kakans.push(m.tiles[0]);
+    }
+    return o;
+  }
+
+  function claimOpts(p, t, isNext) {
+    const c = counts(H.hands[p]), N = 5 - H.melds[p].length;
+    c[t]++;
+    const o = { hu: isWin(c, N), pong: false, kan: false, chis: [] };
+    c[t]--;
+    if (H.wall.length > KEEP) {
+      o.pong = c[t] >= 2;
+      o.kan = c[t] >= 3;
+      if (isNext && t < 27) {
+        const r = t % 9;
+        if (r >= 2 && c[t - 2] && c[t - 1]) o.chis.push([t - 2, t - 1]);
+        if (r >= 1 && r <= 7 && c[t - 1] && c[t + 1]) o.chis.push([t - 1, t + 1]);
+        if (r <= 6 && c[t + 1] && c[t + 2]) o.chis.push([t + 1, t + 2]);
+      }
+    }
+    o.any = o.hu || o.pong || o.kan || o.chis.length > 0;
+    return o;
+  }
+
+  // ---------- computer players ----------
+  function aiDiscard(p) {
+    const hand = H.hands[p], N = 5 - H.melds[p].length, c = counts(hand), v = visible(p);
+    const late = H.wall.length < KEEP + 30;
+    const threats = [1, 2, 3].map(k => (p + k) % 4).filter(q => H.melds[q].length >= 3 || late);
+    let best = hand[0], bestS = -Infinity;
+    for (const t of new Set(hand)) {
+      c[t]--;
+      const sh = shanten(c, N);
+      let uk = 0;
+      for (let u = 0; u < 34; u++) {
+        const left = 4 - c[u] - v[u] - (u === t ? 1 : 0);
+        if (left <= 0) continue;
+        c[u]++;
+        if (shanten(c, N) < sh) uk += left;
+        c[u]--;
+      }
+      c[t]++;
+      let s = -sh * 1000 + uk * 8;
+      if (t >= 27) s += isValue(t, p) ? -4 : 6;
+      else if (t % 9 === 0 || t % 9 === 8) s += 3;
+      if (sh >= 1) for (const q of threats) if (H.discards[q].includes(t)) s += 30;
+      s += Math.random() * 2;
+      if (s > bestS) { bestS = s; best = t; }
+    }
+    return best;
+  }
+
+  function bestAfterDiscard(c, N) {
+    let b = 99;
+    for (let t = 0; t < 34; t++) if (c[t]) { c[t]--; b = Math.min(b, shanten(c, N)); c[t]++; }
+    return b;
+  }
+
+  function aiClaim(p, t, o) {
+    if (o.hu) return { type: 'hu' };
+    const N = 5 - H.melds[p].length, c = counts(H.hands[p]);
+    const sh0 = shanten(c, N);
+    if (o.kan) { c[t] -= 3; const s = shanten(c, N - 1); c[t] += 3; if (s <= sh0) return { type: 'kan' }; }
+    if (o.pong) {
+      c[t] -= 2; const s = bestAfterDiscard(c, N - 1); c[t] += 2;
+      if (s < sh0 || (s === sh0 && isValue(t, p))) return { type: 'pong' };
+    }
+    for (const pair of o.chis) {
+      c[pair[0]]--; c[pair[1]]--;
+      const s = bestAfterDiscard(c, N - 1);
+      c[pair[0]]++; c[pair[1]]++;
+      if (s < sh0) return { type: 'chi', pair };
+    }
+    return null;
+  }
+
+  function aiTurn(p, claimed) {
+    const o = turnOpts(p, claimed);
+    if (o.hu) return { type: 'hu' };
+    const N = 5 - H.melds[p].length, c = counts(H.hands[p]);
+    const sh = shanten(c, N);
+    for (const t of o.ankans) { c[t] -= 4; const s = shanten(c, N - 1); c[t] += 4; if (s <= sh) return { type: 'ankan', t }; }
+    for (const t of o.kakans) { c[t]--; const s = shanten(c, N); c[t]++; if (s <= sh) return { type: 'kakan', t }; }
+    return { type: 'discard', t: aiDiscard(p) };
+  }
+
+  // ---------- your decisions ----------
+  async function humanTurn(drawn, claimed) {
+    H.drawn = drawn;
+    let act;
+    if (M.auto) { render(); await sleep(450); act = aiTurn(0, claimed); }
+    else act = await ask({ kind: 'turn', o: turnOpts(0, claimed), claimed });
+    H.drawn = null;
+    return act;
+  }
+  async function humanClaim(o, t) {
+    if (M.auto) { await sleep(200); return aiClaim(0, t, o); }
+    vibrate(15);
+    return ask({ kind: 'claim', o, t });
+  }
+
+  async function resolveClaims(d, t) {
+    const RANK = { hu: 3, kan: 2, pong: 2, chi: 1 };
+    let best = null, human = null;
+    const consider = (p, k, dec) => {
+      if (!dec) return;
+      const r = RANK[dec.type];
+      if (!best || r > best.r || (r === best.r && k < best.k)) best = Object.assign({ p, k, r }, dec);
+    };
+    for (let k = 1; k <= 3; k++) {
+      const p = (d + k) % 4, o = claimOpts(p, t, k === 1);
+      if (!o.any) continue;
+      if (p === 0) human = { k, o };
+      else consider(p, k, aiClaim(p, t, o));
+    }
+    if (human) {
+      const top = human.o.hu ? 3 : human.o.pong || human.o.kan ? 2 : 1;
+      if (!best || top > best.r || (top === best.r && human.k < best.k)) consider(0, human.k, await humanClaim(human.o, t));
+    }
+    return best;
+  }
+
+  async function robKong(p, t) {
+    for (let k = 1; k <= 3; k++) {
+      const q = (p + k) % 4, c = counts(H.hands[q]);
+      c[t]++;
+      if (!isWin(c, 5 - H.melds[q].length)) continue;
+      if (q !== 0) return q;
+      const dec = await humanClaim({ hu: true, pong: false, kan: false, chis: [], rob: true }, t);
+      if (dec) return q;
+    }
+    return -1;
+  }
+
+  // ---------- one hand ----------
+  async function playHand() {
+    setupHand();
+    H.msg = `${HON[M.wind]}風${HON[M.dealer]}局`;
+    H.sub = M.dealer === 0 ? '你是莊家，先打一張' : `${SEAT[M.dealer]}坐莊`;
+    render();
+    await sleep(700);
+    let p = M.dealer, draw = false, kan = false, claimed = false, first = true;
+    for (;;) {
+      H.cur = p;
+      let drawn = null;
+      if (draw) {
+        drawn = drawFor(p, kan);
+        if (drawn === null) return drawnGame();
+        H.hands[p].push(drawn);
+      }
+      const haitei = draw && H.wall.length <= KEEP;
+      render();
+      let act;
+      if (p === 0) act = await humanTurn(drawn, claimed);
+      else { await sleep(520); act = aiTurn(p, claimed); }
+
+      if (act.type === 'hu') {
+        const win = drawn ?? H.hands[p][H.hands[p].length - 1];
+        return finish(p, -1, { zimo: true, kanFlower: kan, haitei, tenhou: first }, win);
+      }
+      first = false;
+
+      if (act.type === 'ankan' || act.type === 'kakan') {
+        const t = act.t;
+        if (act.type === 'ankan') {
+          removeN(H.hands[p], t, 4);
+          H.melds[p].push({ kind: 'ankan', tiles: [t, t, t, t] });
+        } else {
+          removeN(H.hands[p], t, 1);
+          H.msg = `${SEAT[p]} 加槓`; H.sub = tileName(t);
+          render();
+          const robber = await robKong(p, t);
+          if (robber >= 0) { H.hands[robber].push(t); return finish(robber, p, { robKong: true }, t); }
+          const m = H.melds[p].find(m => m.kind === 'pong' && m.tiles[0] === t);
+          m.kind = 'kakan'; m.tiles.push(t);
+        }
+        H.hands[p].sort(byType);
+        H.msg = `${SEAT[p]} ${act.type === 'ankan' ? '暗槓' : '加槓'}`; H.sub = '補一張';
+        H.last = null;
+        draw = true; kan = true; claimed = false;
+        render();
+        await sleep(500);
+        continue;
+      }
+
+      const t = act.t;
+      removeN(H.hands[p], t, 1);
+      H.hands[p].sort(byType);
+      H.discards[p].push(t);
+      H.last = { p, t };
+      H.msg = `${SEAT[p]}打出`; H.sub = tileName(t);
+      kan = false;
+      render();
+      if (p === 0) vibrate(8);
+      await sleep(p === 0 ? 150 : 280);
+
+      const cl = await resolveClaims(p, t);
+      if (cl) {
+        const q = cl.p;
+        H.discards[p].pop();
+        H.last = null;
+        if (cl.type === 'hu') { H.hands[q].push(t); return finish(q, p, { houtei: H.wall.length <= KEEP }, t); }
+        if (cl.type === 'chi') {
+          removeN(H.hands[q], cl.pair[0], 1); removeN(H.hands[q], cl.pair[1], 1);
+          H.melds[q].push({ kind: 'chi', tiles: [cl.pair[0], t, cl.pair[1]].sort(byType), from: p });
+        } else if (cl.type === 'pong') {
+          removeN(H.hands[q], t, 2);
+          H.melds[q].push({ kind: 'pong', tiles: [t, t, t], from: p });
+        } else {
+          removeN(H.hands[q], t, 3);
+          H.melds[q].push({ kind: 'mkan', tiles: [t, t, t, t], from: p });
+        }
+        H.msg = `${SEAT[q]} ${{ chi: '吃', pong: '碰', kan: '槓' }[cl.type]}`; H.sub = tileName(t);
+        p = q; draw = cl.type === 'kan'; kan = draw; claimed = !draw;
+        render();
+        await sleep(550);
+        continue;
+      }
+      p = (p + 1) % 4; draw = true; claimed = false;
+    }
+  }
+
+  // ---------- scoring ----------
+  function scoreHand(p, winTile, ctx) {
+    const c = counts(H.hands[p]);
+    const N = 5 - H.melds[p].length;
+    c[winTile]--;
+    const waits = waitsOf(c, N).length;
+    c[winTile]++;
+    const seat = seatWind(p);
+    const exposed = H.melds[p].filter(m => m.kind !== 'ankan').length;
+    const fl = H.flowers[p];
+    let best = null;
+    for (const d of decompose(c)) {
+      const gs = d.groups.map(g => ({ k: g.k, t: g.t, hidden: true }));
+      // a triplet finished off someone else's discard is not concealed, unless the tile can sit elsewhere
+      if (!ctx.zimo && d.pair !== winTile && !gs.some(g => g.k === 'c' && winTile >= g.t && winTile <= g.t + 2)) {
+        const g = gs.find(g => g.k === 'p' && g.t === winTile);
+        if (g) g.hidden = false;
+      }
+      for (const m of H.melds[p]) gs.push({ k: m.kind === 'chi' ? 'c' : 'p', t: m.tiles[0], hidden: m.kind === 'ankan' });
+
+      const items = [];
+      const add = (n, v) => items.push([n, v]);
+      if (ctx.tenhou) add('天胡', 24);
+      else if (!exposed && ctx.zimo) add('門清自摸', 3);
+      else if (!exposed) add('門清', 1);
+      else if (ctx.zimo) add('自摸', 1);
+      if (exposed === 5 && !ctx.zimo) add('全求人', 2);
+
+      const suits = new Set();
+      let honors = d.pair >= 27;
+      if (d.pair < 27) suits.add((d.pair / 9) | 0);
+      for (const g of gs) { if (g.t >= 27) honors = true; else suits.add((g.t / 9) | 0); }
+      if (!suits.size) add('字一色', 16);
+      else if (suits.size === 1) honors ? add('混一色', 4) : add('清一色', 8);
+
+      const pongs = gs.filter(g => g.k === 'p');
+      if (pongs.length === 5) add('碰碰胡', 4);
+      if (!honors && !fl.length && !pongs.length && !ctx.zimo && waits >= 2) add('平胡', 2);
+
+      const dragons = pongs.filter(g => g.t >= 31).length;
+      if (dragons === 3) add('大三元', 8);
+      else if (dragons === 2 && d.pair >= 31) add('小三元', 4);
+      else for (const g of pongs) if (g.t >= 31) add(tileName(g.t), 1);
+
+      const winds = pongs.filter(g => g.t >= 27 && g.t < 31).length;
+      if (winds === 4) add('大四喜', 16);
+      else if (winds === 3 && d.pair >= 27 && d.pair < 31) add('小四喜', 8);
+      else for (const g of pongs) {
+        if (g.t === 27 + M.wind) add(`圈風 ${HON[M.wind]}`, 1);
+        if (g.t === 27 + seat) add(`門風 ${HON[seat]}`, 1);
+      }
+
+      const hidden = pongs.filter(g => g.hidden).length;
+      if (hidden >= 5) add('五暗刻', 8);
+      else if (hidden === 4) add('四暗刻', 5);
+      else if (hidden === 3) add('三暗刻', 2);
+
+      if (waits === 1 && exposed < 5 && !ctx.tenhou) add('獨聽', 1);
+      if (ctx.kanFlower) add('槓上開花', 1);
+      if (ctx.haitei) add('海底撈月', 1);
+      if (ctx.houtei) add('河底撈魚', 1);
+      if (ctx.robKong) add('搶槓', 1);
+      for (const s of [0, 4]) {
+        const set = fl.filter(f => f - 34 >= s && f - 34 < s + 4);
+        if (set.length === 4) add(`花槓 ${s ? '梅蘭竹菊' : '春夏秋冬'}`, 2);
+        else if (set.includes(34 + s + seat)) add(`正花 ${FLW[s + seat]}`, 1);
+      }
+      const total = items.reduce((a, x) => a + x[1], 0);
+      if (!best || total > best.total) best = { items, total };
+    }
+    return best;
+  }
+
+  function handHTML(p, winTile) {
+    const ms = H.melds[p].map(m => `<span class="meld">${m.tiles.map((t, i) =>
+      tile(m.kind === 'ankan' && (i === 0 || i === 3) ? -1 : t)).join('')}</span>`).join('');
+    const rest = H.hands[p].slice();
+    if (winTile != null) removeN(rest, winTile, 1);
+    rest.sort(byType);
+    return `<div class="tiles">${ms}${rest.map(t => tile(t)).join('')}${winTile != null ? tile(winTile, 'win') : ''}</div>`;
+  }
+  function flowersHTML(p) {
+    return H.flowers[p].length ? `<div class="tiles">${H.flowers[p].map(t => tile(t)).join('')}</div>` : '';
+  }
+
+  async function finish(w, from, ctx, winTile) {
+    ctx.zimo = from < 0;
+    const res = scoreHand(w, winTile, ctx);
+    const payers = ctx.zimo ? [0, 1, 2, 3].filter(q => q !== w) : [from];
+    const delta = [0, 0, 0, 0];
+    const dealerTai = 1 + 2 * M.streak;
+    for (const q of payers) {
+      const extra = w === M.dealer || q === M.dealer ? dealerTai : 0;
+      const amt = BASE + PER * (res.total + extra);
+      delta[q] -= amt; delta[w] += amt;
+    }
+    for (let q = 0; q < 4; q++) M.scores[q] += delta[q];
+    H.reveal = true; H.cur = -1;
+    H.msg = w === 0 ? '你胡了！' : `${SEAT[w]} 胡牌`;
+    H.sub = ctx.zimo ? '自摸' : `${SEAT[from]}放槍`;
+    render();
+    vibrate(w === 0 ? [30, 60, 30] : 20);
+
+    const dealerInvolved = payers.some(q => w === M.dealer || q === M.dealer);
+    const items = res.items.map(([n, v]) => `<li><span>${n}</span><b>${v} 台</b></li>`).join('')
+      + (dealerInvolved ? `<li><span>莊家${M.streak ? `・連${M.streak}拉${M.streak}` : ''}</span><b>${dealerTai} 台</b></li>` : '');
+    const title = w === 0 ? `<em>你</em>${ctx.zimo ? '自摸' : '胡了'}` : `${SEAT[w]}${ctx.zimo ? '自摸' : '胡牌'}`;
+    const sub = ctx.zimo ? `自摸 ${tileName(winTile)}` : `${SEAT[from]}放槍 · 胡 ${tileName(winTile)}`;
+    const note = dealerInvolved && payers.length > 1 && w !== M.dealer ? '<p class="note">莊家台只算在莊家付的那一份。</p>' : '';
+    await ask({
+      kind: 'sheet',
+      html: `<h2>${title}</h2><p class="sub">${sub}</p>
+        ${handHTML(w, winTile)}${flowersHTML(w)}
+        <ul>${items || '<li><span>屁胡</span><b>0 台</b></li>'}</ul>
+        <div class="total"><span>底 ${BASE} ＋ 每台 ${PER}</span><b>${res.total + (w === M.dealer ? dealerTai : 0)} 台</b></div>
+        ${note}${scoreTable(delta)}
+        <button class="primary" data-act="next">${nextLabel(w)}</button>`
+    });
+    advance(w);
+  }
+
+  async function drawnGame() {
+    H.reveal = true; H.cur = -1;
+    H.msg = '流局'; H.sub = '牌摸完了';
+    render();
+    await ask({
+      kind: 'sheet',
+      html: `<h2>流局</h2><p class="sub">牌牆只剩 ${KEEP} 張，沒人胡牌，${SEAT[M.dealer]}連莊。</p>
+        ${scoreTable([0, 0, 0, 0])}<button class="primary" data-act="next">下一局</button>`
+    });
+    advance(-1);
+  }
+
+  function scoreTable(delta) {
+    return `<table>${[0, 1, 2, 3].map(q => `<tr><td>${HON[seatWind(q)]}　${SEAT[q]}${q === M.dealer ? '（莊）' : ''}</td>
+      <td class="${delta[q] > 0 ? 'up' : delta[q] < 0 ? 'down' : ''}">${delta[q] ? fmt(delta[q]) : '—'}</td>
+      <td>${fmt(M.scores[q]) || '0'}</td></tr>`).join('')}</table>`;
+  }
+  function nextLabel(w) {
+    if (w === M.dealer) return '下一局（連莊）';
+    return M.dealer === 3 && M.wind + 1 >= M.len ? '看結果' : '下一局';
+  }
+
+  function advance(w) {
+    if (w === M.dealer || w < 0) M.streak++;
+    else {
+      M.streak = 0;
+      M.dealer = (M.dealer + 1) % 4;
+      if (M.dealer === 0) M.wind++;
+    }
+    if (M.wind >= M.len) M.over = true;
+    save();
+  }
+
+  async function run() {
+    try {
+      while (!M.over) await playHand();
+      const order = [0, 1, 2, 3].sort((a, b) => M.scores[b] - M.scores[a]);
+      const rank = order.indexOf(0) + 1;
+      await ask({
+        kind: 'sheet',
+        html: `<h2>${rank === 1 ? '<em>你</em>拿下第一' : `你排第 ${rank}`}</h2>
+          <p class="sub">${M.len === 1 ? '一圈' : '一將'}打完了</p>
+          <table>${order.map((q, i) => `<tr><td>${i + 1}　${SEAT[q]}</td><td></td>
+            <td class="${M.scores[q] > 0 ? 'up' : M.scores[q] < 0 ? 'down' : ''}">${fmt(M.scores[q]) || '0'}</td></tr>`).join('')}</table>
+          <button class="primary" data-act="next">再來一${M.len === 1 ? '圈' : '將'}</button>`
+      });
+      newMatch(M.len);
+    } catch (e) { if (e !== ABORT) throw e; }
+  }
+
+  function newMatch(len) {
+    abort();
+    M = freshMatch(len, M?.auto);
+    save();
+    run();
+  }
+
+  // ---------- drawing ----------
+  function meldsHTML(p, own) {
+    return H.melds[p].map(m => `<span class="meld">${m.tiles.map((t, i) => {
+      const hide = m.kind === 'ankan' && (own || H.reveal ? i === 0 || i === 3 : true);
+      return tile(hide ? -1 : t);
+    }).join('')}</span>`).join('');
+  }
+  function pondHTML(p) {
+    const n = H.discards[p].length;
+    return H.discards[p].map((t, i) => tile(t, H.last && H.last.p === p && i === n - 1 ? 'last' : '')).join('');
+  }
+  function whoHTML(p) {
+    const w = seatWind(p);
+    return `<div class="who"><span class="wind ${p === M.dealer ? 'dealer' : ''}" title="${HON[w]}風位">${HON[w]}</span>
+      <span>${SEAT[p]}</span>${p === M.dealer ? `<span class="tag">莊${M.streak ? M.streak : ''}</span>` : ''}
+      <span class="pts">${fmt(M.scores[p]) || '0'}</span></div>`;
+  }
+  function seatHTML(p) {
+    const hand = H.reveal
+      ? H.hands[p].slice().sort(byType).map(t => tile(t)).join('')
+      : `<span class="cnt">${tile(-1)}×${H.hands[p].length}</span>`;
+    return `<section class="seat ${H.cur === p ? 'now' : ''}" aria-label="${SEAT[p]}">
+      ${whoHTML(p)}
+      <div class="tiles">${H.flowers[p].map(t => tile(t)).join('')}${meldsHTML(p)}${hand}</div>
+      <div class="pond">${pondHTML(p)}</div>
+    </section>`;
+  }
+
+  function displayHand() {
+    const h = H.hands[0].slice();
+    let d = null;
+    if (H.drawn != null) {
+      const k = h.lastIndexOf(H.drawn);
+      if (k >= 0) { h.splice(k, 1); d = H.drawn; }
+    }
+    h.sort(byType);
+    if (d !== null) h.push(d);
+    return { tiles: h, drawn: d !== null };
+  }
+
+  function waitText(c, N) {
+    const w = waitsOf(c, N);
+    if (!w.length) return '';
+    const v = visible(0);
+    const left = w.reduce((a, t) => a + Math.max(0, 4 - c[t] - v[t]), 0);
+    return `聽 ${w.map(tileName).join('、')}（剩 ${left} 張）`;
+  }
+
+  function render() {
+    if (!H) return;
+    statusEl.innerHTML = `${HON[M.wind]}風${HON[M.dealer]}局${M.streak ? ` 連${M.streak}` : ''}<small>牌牆剩 ${Math.max(0, H.wall.length - KEEP)} 張</small>`;
+    oppsEl.innerHTML = [3, 2, 1].map(seatHTML).join('');
+
+    const showTile = H.last && (!UIq || UIq.kind !== 'claim') ? H.last.t : UIq && UIq.kind === 'claim' ? UIq.t : null;
+    centerEl.innerHTML = `${showTile != null ? tile(showTile) : ''}<div class="say">${H.msg}${H.sub ? `<small>${H.sub}</small>` : ''}</div>`;
+
+    pondEl.innerHTML = pondHTML(0);
+    mineEl.innerHTML = whoHTML(0) + H.flowers[0].map(t => tile(t)).join('') + meldsHTML(0, true);
+
+    const { tiles, drawn } = displayHand();
+    const myTurn = UIq && UIq.kind === 'turn';
+    if (selected >= tiles.length) selected = -1;
+    const avail = handEl.clientWidth || 340;
+    const n = tiles.length + (drawn ? 0.4 : 0);
+    const w = Math.max(16, Math.min(46, Math.floor((avail - 2 * (tiles.length - 1)) / n)));
+    handEl.style.setProperty('--w', w + 'px');
+    handEl.classList.toggle('wait', !myTurn);
+    handEl.innerHTML = tiles.map((t, i) => tile(t,
+      `${drawn && i === tiles.length - 1 ? 'drawn' : ''} ${myTurn && i === selected ? 'sel' : ''}`,
+      'button', `data-i="${i}" type="button"`)).join('');
+
+    // hint + actions
+    const N = 5 - H.melds[0].length, c = counts(H.hands[0]);
+    let hint = '', acts = '';
+    if (myTurn) {
+      const o = UIq.o;
+      if (selected >= 0) {
+        const t = tiles[selected];
+        c[t]--;
+        const wt = waitText(c, N);
+        c[t]++;
+        hint = wt ? `打 ${tileName(t)} 後${wt}` : `再點一次打出 ${tileName(t)}`;
+        acts += `<button class="go" data-act="discard">打出 ${tile(t)}</button>`;
+      } else hint = o.hu ? '可以自摸了！' : '點一張牌，再點一次打出';
+      if (o.hu) acts = `<button class="hot" data-act="zimo">自摸</button>` + acts;
+      for (const t of o.ankans) acts += `<button data-act="ankan" data-t="${t}">暗槓 ${tile(t)}</button>`;
+      for (const t of o.kakans) acts += `<button data-act="kakan" data-t="${t}">加槓 ${tile(t)}</button>`;
+    } else if (UIq && UIq.kind === 'claim') {
+      const o = UIq.o, t = UIq.t;
+      hint = o.rob ? `可以搶槓胡 ${tileName(t)}` : `${SEAT[H.last ? H.last.p : 0]}打出 ${tileName(t)}`;
+      if (o.hu) acts += `<button class="hot" data-act="hu">胡</button>`;
+      if (o.kan) acts += `<button data-act="kan">槓</button>`;
+      if (o.pong) acts += `<button data-act="pong">碰</button>`;
+      o.chis.forEach((pr, k) => {
+        const trio = [pr[0], t, pr[1]].sort(byType);
+        acts += `<button data-act="chi" data-k="${k}">吃 ${o.chis.length > 1 ? trio.map(x => tile(x)).join('') : ''}</button>`;
+      });
+      acts += `<button data-act="pass">過</button>`;
+    } else if (!H.reveal) {
+      if (c.reduce((a, b) => a + b, 0) === 3 * N + 1) hint = waitText(c, N);
+      if (!hint) hint = M.auto ? '託管中，電腦幫你打' : H.cur === 0 ? '' : `等${SEAT[H.cur] || ''}出牌…`;
+    }
+    hintEl.textContent = hint;
+    actsEl.innerHTML = acts;
+
+    for (const b of document.querySelectorAll('[data-len]')) b.setAttribute('aria-pressed', String(+b.dataset.len === M.len));
+    autoBtn.setAttribute('aria-pressed', String(!!M.auto));
+  }
+
+  // ---------- input ----------
+  handEl.addEventListener('click', e => {
+    const b = e.target.closest('[data-i]');
+    if (!b || !UIq || UIq.kind !== 'turn') return;
+    const i = +b.dataset.i;
+    if (selected === i) UIq.resolve({ type: 'discard', t: displayHand().tiles[i] });
+    else { selected = i; vibrate(5); render(); }
+  });
+
+  actsEl.addEventListener('click', e => {
+    const b = e.target.closest('button[data-act]');
+    if (!b || !UIq) return;
+    const a = b.dataset.act, res = UIq.resolve;
+    if (a === 'discard') res({ type: 'discard', t: displayHand().tiles[selected] });
+    else if (a === 'zimo') res({ type: 'hu' });
+    else if (a === 'ankan' || a === 'kakan') res({ type: a, t: +b.dataset.t });
+    else if (a === 'chi') res({ type: 'chi', pair: UIq.o.chis[+b.dataset.k] });
+    else if (a === 'pass') res(null);
+    else res({ type: a });
+  });
+
+  cardEl.addEventListener('click', e => {
+    if (e.target.closest('[data-act="next"]') && UIq && UIq.kind === 'sheet') UIq.resolve(true);
+  });
+
+  const inProgress = () => M.scores.some(Boolean) || M.dealer || M.wind || (H && H.discards.some(d => d.length));
+  el('restart').addEventListener('click', () => {
+    if (!inProgress() || confirm('放棄這場，重新開始？')) newMatch(M.len);
+  });
+  for (const b of document.querySelectorAll('[data-len]')) b.addEventListener('click', () => {
+    const len = +b.dataset.len;
+    if (len !== M.len && (!inProgress() || confirm(`改成${len === 1 ? '一圈' : '一將'}會重新開始，確定？`))) newMatch(len);
+  });
+  autoBtn.addEventListener('click', () => {
+    M.auto = !M.auto;
+    save();
+    if (M.auto && UIq && UIq.kind !== 'sheet') {
+      // hand the pending decision to the computer
+      const q = UIq;
+      q.resolve(q.kind === 'turn' ? aiTurn(0, q.claimed) : aiClaim(0, q.t, q.o));
+    } else render();
+  });
+  el('rules-btn').addEventListener('click', () => { rulesEl.hidden = false; el('rules-close').focus(); });
+  el('rules-close').addEventListener('click', () => { rulesEl.hidden = true; });
+  rulesEl.addEventListener('click', e => { if (e.target === rulesEl) rulesEl.hidden = true; });
+
+  new ResizeObserver(() => render()).observe(handEl);
+  // the menu page only exists on the published site or a local copy
+  if (/github\.io$|^localhost$|^127\./.test(location.hostname) || location.protocol === 'file:') el('home').hidden = false;
+
+  M = load() || freshMatch();
+  run();
+})();
+</script>
+</body>
+</html>
