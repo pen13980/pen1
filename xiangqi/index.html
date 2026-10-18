@@ -144,6 +144,7 @@ h1 {
 }
 
 .board-wrap {
+  position: relative;
   flex: 1 1 auto;
   min-height: 0;
   display: grid;
@@ -166,14 +167,15 @@ canvas {
 .hint b { color: var(--accent); font-weight: 700; }
 .controls {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 10px;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
 }
 .controls button {
   font: inherit;
   font-family: var(--font-display);
   font-size: 17px;
-  padding: 12px 8px;
+  padding: 12px 4px;
+  white-space: nowrap;
   border-radius: 10px;
   border: 1px solid var(--line);
   background: var(--surface);
@@ -187,16 +189,79 @@ canvas {
 }
 .controls button:disabled { opacity: .4; cursor: default; }
 button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.controls button.armed { background: var(--ink); border-color: var(--ink); color: var(--bg); }
 .score {
   display: flex;
+  flex-wrap: wrap;
   justify-content: center;
-  gap: 18px;
+  gap: 4px 16px;
   color: var(--muted);
   font-size: 13px;
   font-variant-numeric: tabular-nums;
 }
 .score span { display: inline-flex; align-items: center; gap: 6px; }
 .score .side-icon { width: 12px; height: 12px; border-width: 1.5px; }
+
+/* result card over the board */
+.result {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: rgba(24, 16, 8, .5);
+  border-radius: 6px;
+  animation: fade .25s ease-out;
+}
+.result-card {
+  width: min(320px, 92%);
+  background: var(--surface);
+  color: var(--ink);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  padding: 22px 18px 16px;
+  text-align: center;
+  box-shadow: 0 18px 40px -12px rgba(0,0,0,.55);
+  animation: pop .3s cubic-bezier(.2,1.4,.4,1);
+}
+.result-seal {
+  display: inline-grid;
+  place-items: center;
+  width: 72px; height: 72px;
+  border: 4px solid currentColor;
+  border-radius: 10px;
+  font-family: var(--font-display);
+  font-size: 44px;
+  font-weight: 700;
+  line-height: 1;
+  transform: rotate(-6deg);
+  color: var(--accent);
+}
+.result-seal.lose { color: var(--muted); }
+.result-seal.draw { color: var(--ink); }
+.result h2 {
+  margin: 12px 0 4px;
+  font-family: var(--font-display);
+  font-size: 32px;
+  letter-spacing: .08em;
+}
+.result-reason { margin: 0; font-size: 16px; font-weight: 600; }
+.result-meta { margin: 6px 0 16px; color: var(--muted); font-size: 13px; }
+.result-actions { display: grid; grid-template-columns: 1fr 1fr 1.3fr; gap: 8px; }
+.result-actions button {
+  font: inherit;
+  font-family: var(--font-display);
+  font-size: 16px;
+  padding: 10px 4px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: var(--bg);
+  color: var(--ink);
+  cursor: pointer;
+}
+.result-actions button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+@keyframes fade { from { opacity: 0; } }
+@keyframes pop { from { transform: scale(.85); opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .result, .result-card { animation: none; } }
 </style>
 </head>
 <body>
@@ -223,12 +288,26 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
   <div class="board-wrap" id="wrap">
     <canvas id="board" aria-label="象棋棋盤"></canvas>
+    <div class="result" id="result" role="dialog" aria-labelledby="result-title" hidden>
+      <div class="result-card">
+        <div class="result-seal" id="result-seal">勝</div>
+        <h2 id="result-title"></h2>
+        <p class="result-reason" id="result-reason"></p>
+        <p class="result-meta" id="result-meta"></p>
+        <div class="result-actions">
+          <button id="r-view">看棋盤</button>
+          <button id="r-undo">悔棋</button>
+          <button id="r-new" class="primary">再來一局</button>
+        </div>
+      </div>
+    </div>
   </div>
 
   <p class="hint" id="hint"></p>
 
   <div class="controls">
     <button id="undo">悔棋</button>
+    <button id="resign">認輸</button>
     <button id="swap">換邊</button>
     <button id="restart" class="primary">新局</button>
   </div>
@@ -625,11 +704,13 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   }
 
   // returns best move for the side to move in `p`
-  function think(p, level) {
+  function think(p, level, avoid = []) {
     pos = p;
     const cfg = [null, { time: 250, depth: 2, noise: 60 }, { time: 900, depth: 5, noise: 8 }, { time: 2500, depth: 30, noise: 0 }][level];
-    const root = pos.legal();
-    if (!root.length) return 0;
+    const all = pos.legal();
+    if (!all.length) return 0;
+    const kept = all.filter(m => !avoid.includes(m));
+    const root = kept.length ? kept : all;
     if (root.length === 1) return root[0];
     history.fill(0); killers = []; nodes = 0; aborted = false;
     deadline = Date.now() + cfg.time;
@@ -695,11 +776,16 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   const scoreEl = document.getElementById('score');
   const undoBtn = document.getElementById('undo');
 
-  let S;          // persisted: moves, mode, level, human, flip, wins
+  const resultEl = document.getElementById('result');
+  const resignBtn = document.getElementById('resign');
+
+  let S;          // persisted: moves, mode, level, human, flip, wins, undos, ended
   let G;          // live Pos
-  let legalNow = [];
+  let legalNow = [];   // truly legal moves (for mate detection, AI)
+  let movesNow = [];   // moves a human may make — self-check (送將) allowed
   let selected = -1;
-  let result = null;   // { winner: 1 | -1 | 0, reason }
+  let result = null;   // { winner: 1 | -1 | 0, reason, detail }
+  let warn = '';
   let aiTimer = null, thinking = false;
   let anim = null;
   let size = { w: 0, h: 0 }, cell = 0, margin = 0;
@@ -712,6 +798,9 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
       human: prev?.human ?? RED,
       flip: prev?.flip ?? false,
       wins: prev?.wins ?? { r: 0, b: 0, d: 0 },
+      undos: { r: 0, b: 0 },              // this game, by side
+      undoTotal: prev?.undoTotal ?? 0,    // all games
+      ended: null,                        // resignation (not derivable from the moves)
       scored: false,
     };
   }
@@ -726,15 +815,18 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
   // rebuild the live position by replaying the move list
   function rebuild() {
-    G = new Pos(parseFen(INIT_FEN), RED);
+    G = startPos();
     const ok = [];
     for (const m of S.moves) {
-      if (!G.legal().includes(m)) break;
+      if (!G.gen(false).includes(m)) break;
       G.make(m); ok.push(m);
+      if (G.attacked(-G.side)) break; // 送將 ends the game
     }
     S.moves = ok;
     afterPositionChange(false);
   }
+
+  const startPos = () => new Pos(parseFen(S.startFen || INIT_FEN), RED); // startFen: testing hook
 
   function lastIrreversible() {
     // plies since last capture
@@ -743,18 +835,85 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
     return n;
   }
 
+  // ---------- 長將／長捉 ----------
+  // does the piece just moved to `sq` chase (捉) an enemy piece?
+  function chases(p, sq) {
+    const piece = p.b[sq], mover = piece > 0 ? 1 : -1, t = Math.abs(piece);
+    if (t === K || t === P) return false; // 帥將、兵卒捉子不算
+    const side0 = p.side;
+    p.side = mover;
+    let found = false;
+    for (const m of p.gen(true)) {
+      if (m >> 7 !== sq) continue;
+      const x = m & 127, xt = Math.abs(p.b[x]);
+      if (xt === K || (xt === P && ownHalf(-mover, (x / 9) | 0))) continue; // 未過河兵卒不算
+      p.make(m);
+      const canTake = !p.attacked(mover);
+      let guarded = false;
+      if (canTake) for (const r of p.gen(true)) {
+        if ((r & 127) !== x) continue;
+        p.make(r); const ok = !p.attacked(-mover); p.unmake(r);
+        if (ok) { guarded = true; break; }
+      }
+      p.unmake(m);
+      // 有根子不算捉，但傌、炮捉俥仍算
+      if (canTake && (!guarded || (xt === R && (t === N || t === C)))) { found = true; break; }
+    }
+    p.side = side0;
+    return found;
+  }
+  // how often the current position has occurred, and which side kept checking/chasing through the cycle
+  function repetition() {
+    const idx = [];
+    for (let i = G.histA.length - 2; i >= 0; i -= 2) if (G.histA[i] === G.ha && G.histB[i] === G.hb) idx.push(i);
+    if (!idx.length) return { reps: 1, perp: null };
+    const from = idx[Math.min(1, idx.length - 1)];
+    const p = startPos();
+    for (let j = 0; j < from; j++) p.make(S.moves[j]);
+    const st = { 1: { n: 0, check: 0, chase: 0 }, '-1': { n: 0, check: 0, chase: 0 } };
+    for (let j = from; j < S.moves.length; j++) {
+      const m = S.moves[j], s = st[p.side];
+      p.make(m);
+      s.n++;
+      if (p.attacked(p.side)) s.check++;
+      else if (chases(p, m & 127)) s.chase++;
+    }
+    const kind = side => {
+      const s = st[side];
+      return s.n && s.check + s.chase === s.n ? (s.check === s.n ? '長將' : '長捉') : null;
+    };
+    return { reps: idx.length + 1, perp: { 1: kind(1), '-1': kind(-1) } };
+  }
+
+  // outcome of the current position: [result | null, warning]
+  function evaluate(legal) {
+    if (S.ended) return [S.ended, ''];
+    const mover = -G.side;
+    if (S.moves.length && G.attacked(mover))
+      return [{ winner: G.side, reason: '送將', detail: `${sideName(mover)}走後老將被吃` }, ''];
+    if (!legal.length) return [G.inCheck()
+      ? { winner: mover, reason: '絕殺', detail: `${sideName(G.side)}被將死` }
+      : { winner: mover, reason: '困斃', detail: `${sideName(G.side)}無棋可走` }, ''];
+    let w = '';
+    const rep = repetition();
+    if (rep.perp) {
+      const r = rep.perp[1], b = rep.perp[-1];
+      const who = r && !b ? RED : b && !r ? BLACK : 0;
+      if (rep.reps >= 3) {
+        if (who) return [{ winner: -who, reason: rep.perp[who] + '判負', detail: `${sideName(who)}${rep.perp[who]}不變著，判負` }, ''];
+        return [{ winner: 0, reason: '重複局面', detail: '雙方循環不變，作和' }, ''];
+      }
+      if (who) w = `${sideName(who)}${rep.perp[who]}！必須變著，再重複就判負`;
+    }
+    if (lastIrreversible() >= 120) return [{ winner: 0, reason: '和棋', detail: '六十回合未吃子' }, ''];
+    if (!hasAttackers()) return [{ winner: 0, reason: '和棋', detail: '雙方都沒有攻擊子力' }, ''];
+    return [null, w];
+  }
+
   function afterPositionChange(scoreIt) {
     legalNow = G.legal();
-    result = null;
-    if (!legalNow.length) {
-      result = { winner: -G.side, reason: G.inCheck() ? '絕殺' : '困斃' };
-    } else {
-      let reps = 1;
-      for (let i = G.histA.length - 2; i >= 0; i -= 2) if (G.histA[i] === G.ha && G.histB[i] === G.hb) reps++;
-      if (reps >= 3) result = { winner: 0, reason: '重複局面' };
-      else if (lastIrreversible() >= 120) result = { winner: 0, reason: '六十回合未吃子' };
-      else if (!hasAttackers()) result = { winner: 0, reason: '雙方無攻擊子力' };
-    }
+    movesNow = G.gen(false);
+    [result, warn] = evaluate(legalNow);
     if (result && scoreIt && !S.scored) {
       S.wins[result.winner > 0 ? 'r' : result.winner < 0 ? 'b' : 'd']++;
       S.scored = true;
@@ -777,22 +936,47 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
     lastNote = note;
     selected = -1;
     afterPositionChange(true);
-    vibrate(G.caps[G.caps.length - 1] ? 25 : 12);
+    vibrate(result ? [40, 60, 120] : G.caps[G.caps.length - 1] ? 25 : 12);
     save();
     updateUI();
     loop();
+    if (result) setTimeout(showResult, 380); // let the move land first
     maybeAI();
   }
   let lastNote = '';
+
+  // would the computer lose by rule (長將／長捉不變) after `m`, or after any reply that closes the cycle?
+  function losesByRule(m) {
+    const me = G.side;
+    const lostNow = () => { const [r] = evaluate(G.legal()); return !!r && r.winner === -me; };
+    G.make(m); S.moves.push(m);
+    let lost = lostNow();
+    if (!lost && G.histA.some((h, i) => h === G.ha && G.histB[i] === G.hb)) {
+      for (const r of G.legal()) {
+        G.make(r); S.moves.push(r);
+        lost = lostNow();
+        S.moves.pop(); G.unmake(r);
+        if (lost) break;
+      }
+    }
+    S.moves.pop(); G.unmake(m);
+    return lost;
+  }
 
   function maybeAI() {
     clearTimeout(aiTimer);
     if (!aiTurn()) return;
     thinking = true; updateUI();
     aiTimer = setTimeout(() => {
-      const copy = new Pos(G.b, G.side);
-      copy.histA = G.histA.slice(); copy.histB = G.histB.slice();
-      const m = think(copy, S.level);
+      const avoid = [];
+      let m;
+      for (;;) {
+        const copy = new Pos(G.b, G.side);
+        copy.histA = G.histA.slice(); copy.histB = G.histB.slice();
+        m = think(copy, S.level, avoid);
+        if (!m || avoid.includes(m) || avoid.length >= 6 || !losesByRule(m)) break;
+        avoid.push(m); // 必須變著
+      }
       thinking = false;
       if (m && aiTurn()) play(m); else updateUI();
     }, 260);
@@ -800,36 +984,97 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
   function undo() {
     clearTimeout(aiTimer); thinking = false;
-    if (!S.moves.length) return;
+    if (!S.moves.length && !S.ended) return;
     if (result && S.scored) {
       S.wins[result.winner > 0 ? 'r' : result.winner < 0 ? 'b' : 'd']--;
       S.scored = false;
     }
-    let n = 1;
-    if (S.mode === 'ai') {
-      // back to the human's turn
-      n = G.side === S.human ? 2 : 1;
-      if (n > S.moves.length) n = S.moves.length;
+    let who;
+    if (S.ended) {
+      // take back the resignation only
+      who = S.mode === 'ai' ? S.human : -S.ended.winner;
+      S.ended = null;
+    } else {
+      let n = 1;
+      who = S.mode === 'ai' ? S.human : -G.side;
+      if (S.mode === 'ai') {
+        // back to the human's turn
+        n = G.side === S.human ? 2 : 1;
+        if (n > S.moves.length) n = S.moves.length;
+      }
+      S.moves.splice(S.moves.length - n, n);
     }
-    S.moves.splice(S.moves.length - n, n);
+    S.undos[who > 0 ? 'r' : 'b']++;
+    S.undoTotal++;
     selected = -1; anim = null;
+    hideResult();
     rebuild();
     lastNote = S.moves.length ? noteOf(S.moves.length - 1) : '';
     save(); updateUI(); render(); maybeAI();
   }
   function noteOf(i) {
-    const p = new Pos(parseFen(INIT_FEN), RED);
+    const p = startPos();
     for (let j = 0; j < i; j++) p.make(S.moves[j]);
     return notate(p.b, S.moves[i]);
+  }
+
+  let resignArmed = null;
+  function resign() {
+    if (result) return;
+    if (!resignArmed) { // ask once: a second tap within 3 s confirms
+      resignBtn.textContent = '確定？'; resignBtn.classList.add('armed');
+      resignArmed = setTimeout(disarmResign, 3000);
+      return;
+    }
+    disarmResign();
+    clearTimeout(aiTimer); thinking = false;
+    const loser = S.mode === 'ai' ? S.human : G.side;
+    S.ended = { winner: -loser, reason: '認輸', detail: `${sideName(loser)}認輸` };
+    selected = -1;
+    afterPositionChange(true);
+    vibrate([40, 60, 120]);
+    save(); updateUI(); render(); showResult();
+  }
+  function disarmResign() {
+    clearTimeout(resignArmed); resignArmed = null;
+    resignBtn.textContent = '認輸'; resignBtn.classList.remove('armed');
   }
 
   function restart() {
     clearTimeout(aiTimer); thinking = false;
     S = freshState(S);
     selected = -1; anim = null; lastNote = '';
+    hideResult(); disarmResign();
     rebuild();
     save(); updateUI(); render(); maybeAI();
   }
+
+  // ---------- result card ----------
+  function undoText() {
+    const u = S.undos;
+    return S.mode === 'ai' ? `悔棋 ${S.human === RED ? u.r : u.b} 次` : `悔棋 紅 ${u.r}・黑 ${u.b} 次`;
+  }
+  function showResult() {
+    if (!result) return;
+    const seal = document.getElementById('result-seal');
+    let title, mark, cls;
+    if (!result.winner) { title = '和棋'; mark = '和'; cls = 'draw'; }
+    else if (S.mode === 'ai') {
+      const won = result.winner === S.human;
+      title = won ? '你贏了！' : '你輸了'; mark = won ? '勝' : '負'; cls = won ? '' : 'lose';
+    } else { title = sideName(result.winner) + '勝'; mark = '勝'; cls = ''; }
+    seal.textContent = mark;
+    seal.className = 'result-seal ' + cls;
+    if (S.mode === 'pvp' && result.winner) seal.style.color = result.winner > 0 ? '#b5291c' : 'var(--ink)';
+    else seal.style.color = '';
+    document.getElementById('result-title').textContent = title;
+    document.getElementById('result-reason').textContent = result.detail || result.reason;
+    document.getElementById('result-meta').innerHTML =
+      `共 ${Math.ceil(S.moves.length / 2)} 回合・本局${undoText()}<br>累計悔棋 ${S.undoTotal} 次`;
+    document.getElementById('r-undo').disabled = !S.moves.length && !S.ended;
+    resultEl.hidden = false;
+  }
+  function hideResult() { resultEl.hidden = true; }
 
   // ---------- drawing ----------
   function resize() {
@@ -975,20 +1220,20 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
       drawPiece(X(s % 9), Y((s / 9) | 0), p, opts);
     }
     if (selected >= 0) {
-      for (const m of legalNow) {
+      for (const m of movesNow) {
         if (m >> 7 !== selected) continue;
         const t = m & 127, x = X(t % 9), y = Y((t / 9) | 0);
         if (G.b[t]) continue;
-        ctx.fillStyle = 'rgba(30,110,60,.75)';
+        ctx.fillStyle = legalNow.includes(m) ? 'rgba(30,110,60,.75)' : 'rgba(200,40,25,.7)';
         ctx.beginPath(); ctx.arc(x, y, cell * 0.13, 0, Math.PI * 2); ctx.fill();
       }
       drawPiece(X(selected % 9), Y((selected / 9) | 0), G.b[selected], { lift: true, ring: '#1e6e3c' });
-      for (const m of legalNow) {
+      for (const m of movesNow) {
         if (m >> 7 !== selected) continue;
         const t = m & 127;
         if (!G.b[t]) continue;
         const x = X(t % 9), y = Y((t / 9) | 0);
-        ctx.strokeStyle = 'rgba(30,110,60,.9)'; ctx.lineWidth = Math.max(2, cell * 0.08);
+        ctx.strokeStyle = legalNow.includes(m) ? 'rgba(30,110,60,.9)' : 'rgba(200,40,25,.85)'; ctx.lineWidth = Math.max(2, cell * 0.08);
         ctx.setLineDash([cell * 0.12, cell * 0.08]);
         ctx.beginPath(); ctx.arc(x, y, cell * 0.49, 0, Math.PI * 2); ctx.stroke();
         ctx.setLineDash([]);
@@ -1003,7 +1248,8 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
   // ---------- input ----------
   canvas.addEventListener('pointerup', e => {
-    if (result || thinking || aiTurn()) return;
+    if (result) { showResult(); return; }
+    if (thinking || aiTurn()) return;
     const rect = canvas.getBoundingClientRect();
     let c = Math.round((e.clientX - rect.left - margin) / cell);
     let r = Math.round((e.clientY - rect.top - margin) / cell);
@@ -1011,7 +1257,7 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
     if (!onBoard(r, c)) { selected = -1; render(); return; }
     const s = r * 9 + c, p = G.b[s];
     if (selected >= 0) {
-      const m = legalNow.find(m => m >> 7 === selected && (m & 127) === s);
+      const m = movesNow.find(m => m >> 7 === selected && (m & 127) === s);
       if (m !== undefined) { play(m); return; }
     }
     if (p && (p > 0) === (G.side > 0)) {
@@ -1044,20 +1290,29 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
     const round = Math.floor(S.moves.length / 2) + 1;
     let hint;
-    if (result) hint = `<b>${result.reason}</b>${lastNote ? '　最後一步：' + lastNote : ''}`;
+    const suicide = selected >= 0 && movesNow.some(m => m >> 7 === selected && !legalNow.includes(m));
+    if (result) hint = `<b>${result.detail || result.reason}</b>　點棋盤看結果`;
+    else if (warn) hint = `<b>${warn}</b>`;
+    else if (suicide) hint = '紅點會送將，可以走，但走了就判負';
     else if (G.inCheck()) hint = `<b>將軍！</b>　${lastNote}`;
     else if (lastNote) hint = `第 ${round} 回合　上一步：${lastNote}`;
     else hint = S.mode === 'ai' && S.human === BLACK ? '電腦執紅先走' : '點選棋子，再點綠點走棋';
     hintEl.innerHTML = hint;
 
-    undoBtn.disabled = !S.moves.length || (S.mode === 'ai' && S.moves.length === 1 && S.human === BLACK);
+    undoBtn.disabled = S.ended ? false : !S.moves.length || (S.mode === 'ai' && S.moves.length === 1 && S.human === BLACK);
+    resignBtn.disabled = !!result;
     const w = S.wins;
-    scoreEl.innerHTML = S.mode === 'ai'
+    scoreEl.innerHTML = (S.mode === 'ai'
       ? `<span>你 ${S.human === RED ? w.r : w.b} 勝</span><span>電腦 ${S.human === RED ? w.b : w.r} 勝</span><span>和 ${w.d}</span>`
-      : `<span>${sideIcon(RED)}紅 ${w.r} 勝</span><span>${sideIcon(BLACK)}黑 ${w.b} 勝</span><span>和 ${w.d}</span>`;
+      : `<span>${sideIcon(RED)}紅 ${w.r} 勝</span><span>${sideIcon(BLACK)}黑 ${w.b} 勝</span><span>和 ${w.d}</span>`)
+      + `<span>本局${undoText()}</span><span>累計悔棋 ${S.undoTotal}</span>`;
   }
 
   undoBtn.addEventListener('click', undo);
+  resignBtn.addEventListener('click', resign);
+  document.getElementById('r-view').addEventListener('click', hideResult);
+  document.getElementById('r-undo').addEventListener('click', undo);
+  document.getElementById('r-new').addEventListener('click', restart);
   document.getElementById('restart').addEventListener('click', restart);
   document.getElementById('swap').addEventListener('click', () => {
     if (S.mode === 'ai') {
@@ -1084,15 +1339,17 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
   function start(data) {
     S = data && data.state ? data.state : (load() || freshState());
+    S.undos ??= { r: 0, b: 0 }; S.undoTotal ??= 0; S.ended ??= null;
     rebuild();
     lastNote = S.moves.length ? noteOf(S.moves.length - 1) : '';
     updateUI();
     resize();
+    if (result) showResult();
     maybeAI();
   }
   window.claude?.hot?.snapshot?.(() => ({ state: S }));
   window.claude?.hot?.ready ? window.claude.hot.ready(start) : start(window.claude?.hot?.data ?? {});
-  window.__xq = { Pos, parseFen, INIT_FEN, think, notate }; // for testing
+  window.__xq = { Pos, parseFen, INIT_FEN, think, notate, get S() { return S; }, get result() { return result; }, get warn() { return warn; }, play: m => play(m), rebuild, maybeAI: () => maybeAI() }; // for testing
 })();
 </script>
 </body>
